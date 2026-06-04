@@ -50,21 +50,29 @@ _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
 # --------------------------------------------------------------------------- #
 # Downloads (cached to disk)
 # --------------------------------------------------------------------------- #
-def load_boundaries(max_age_days: float = 90) -> dict:
-    """Return the district GeoJSON, downloading + caching if needed."""
+def load_boundaries(max_age_days: float = 365) -> dict:
+    """Return the district GeoJSON, downloading + caching if needed.
+
+    A bundled/cached copy is always preferred over a network failure, so the
+    app still starts when the source is unreachable (e.g. on a fresh deploy).
+    """
     if not GEOJSON_PATH.exists() or _age_days(GEOJSON_PATH) > max_age_days:
-        resp = requests.get(ADM2_URL, timeout=60, allow_redirects=True)
-        resp.raise_for_status()
-        GEOJSON_PATH.write_bytes(resp.content)
+        try:
+            resp = requests.get(ADM2_URL, timeout=30, allow_redirects=True)
+            resp.raise_for_status()
+            GEOJSON_PATH.write_bytes(resp.content)
+        except requests.RequestException:
+            if not GEOJSON_PATH.exists():
+                raise
     return json.loads(GEOJSON_PATH.read_text())
 
 
-def _fetch_chunk(y0: int, y1: int, dest: Path, retries: int = 4) -> None:
+def _fetch_chunk(y0: int, y1: int, dest: Path, retries: int = 3) -> None:
     url = _CHUNK_TMPL.format(m0=f"Jan%20{y0}", m1=f"Dec%20{y1}", **CHIRPS_BBOX)
     delay = 3.0
     for attempt in range(retries):
         try:
-            with requests.get(url, timeout=180, stream=True) as resp:
+            with requests.get(url, timeout=60, stream=True) as resp:
                 if resp.status_code in (500, 502, 503, 504, 429):
                     raise requests.HTTPError(f"{resp.status_code}")
                 resp.raise_for_status()
@@ -81,22 +89,30 @@ def _fetch_chunk(y0: int, y1: int, dest: Path, retries: int = 4) -> None:
             if attempt == retries - 1:
                 raise RuntimeError(f"CHIRPS chunk {y0}-{y1} failed: {exc}") from exc
             time.sleep(delay)
-            delay = min(delay * 2, 40.0)
+            delay = min(delay * 2, 20.0)
 
 
-def download_chirps(max_age_days: float = 25) -> list[Path]:
-    """Fetch CHIRPS in decade chunks (cached); return the list of NetCDF paths."""
+def download_chirps(max_age_days: float = 60) -> list[Path]:
+    """Return the CHIRPS decade-chunk NetCDF paths, fetching only what's missing.
+
+    Bundled chunks (committed to the repo) are used as-is. The chunk covering the
+    current year is refreshed when stale, but a refresh failure falls back to the
+    existing file so a deployed app never hangs on an unreachable data source.
+    """
     end_year = date.today().year
     bounds = list(range(CHIRPS_START_YEAR, end_year + 1, 10)) + [end_year + 1]
     paths: list[Path] = []
     for i in range(len(bounds) - 1):
         y0, y1 = bounds[i], min(bounds[i + 1] - 1, end_year)
         dest = CACHE_DIR / f"chirps_lk_{y0}_{y1}.nc"
-        # Past chunks are immutable; only the chunk containing the current year
-        # is refreshed once it goes stale.
-        is_current = y1 >= end_year
+        is_current = y1 >= end_year      # past chunks are immutable
         if not dest.exists() or (is_current and _age_days(dest) > max_age_days):
-            _fetch_chunk(y0, y1, dest)
+            try:
+                _fetch_chunk(y0, y1, dest)
+            except (RuntimeError, requests.RequestException, OSError):
+                if not dest.exists():
+                    raise            # no bundled copy to fall back on
+                # else: keep using the cached/bundled (possibly stale) chunk
         paths.append(dest)
     return paths
 

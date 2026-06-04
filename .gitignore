@@ -1,6 +1,13 @@
 __pycache__/
 *.pyc
-.cache/
+
+# Cache: ignore everything except the bundled data that lets a fresh deploy
+# start without re-downloading (CHIRPS grids, district polygons, MODIS NDVI).
+.cache/*
+!.cache/chirps_lk_*.nc
+!.cache/lka_adm2.geojson
+!.cache/ndvi_*.json
+
 .venv/
 venv/
 .DS_Store
