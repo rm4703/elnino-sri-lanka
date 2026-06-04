@@ -31,16 +31,34 @@ from .enso import classify
 _SEASON_MINFRAC = 0.6
 
 
+def ensure_season_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Guarantee a frame has season / season-year (and year / month) columns.
+
+    Used defensively so the seasonal pipeline never raises a KeyError if it is
+    handed a frame that pre-dates these columns (e.g. a stale cached panel).
+    """
+    if {"season", "season_year", "year", "month"} <= set(df.columns):
+        return df
+    df = df.copy()
+    if "year" not in df.columns:
+        df["year"] = pd.to_datetime(df["date"]).dt.year
+    if "month" not in df.columns:
+        df["month"] = pd.to_datetime(df["date"]).dt.month
+    if "season" not in df.columns:
+        df["season"] = df["month"].map(MONTH_TO_SEASON)
+    if "season_year" not in df.columns:
+        df["season_year"] = np.where((df["season"] == "NEM") & (df["month"] == 12),
+                                     df["year"] + 1, df["year"])
+    return df
+
+
 def build_panel(weather_monthly: pd.DataFrame, oni_monthly: pd.Series) -> pd.DataFrame:
     """Join weather with ONI and add anomalies, ENSO tags and a season-year.
 
     The *season-year* groups the north-east monsoon's December with the
     following Jan-Feb (so Dec 1997 + Jan/Feb 1998 form one NEM season).
     """
-    df = weather_monthly.copy()
-    df["season"] = df["month"].map(MONTH_TO_SEASON)
-    df["season_year"] = np.where((df["season"] == "NEM") & (df["month"] == 12),
-                                 df["year"] + 1, df["year"])
+    df = ensure_season_cols(weather_monthly.copy())
 
     # Climatology per region x calendar-month (for the monthly phase plots).
     clim = (
@@ -84,6 +102,7 @@ def seasonal_table(panel: pd.DataFrame) -> pd.DataFrame:
     Columns: region, season, season_year, precip_sum (detrended), precip_pct,
     precip_z, temp_mean, oni, phase, n_months.
     """
+    panel = ensure_season_cols(panel)
     need = {s: max(1, int(round(len(m) * _SEASON_MINFRAC)))
             for s, m in SEASONS.items()}
     g = (panel.dropna(subset=["season"])

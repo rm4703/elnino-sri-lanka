@@ -115,6 +115,7 @@ def classify_flavour(events: pd.DataFrame, nino: pd.DataFrame) -> pd.DataFrame:
 
 def _national_seasonal(panel: pd.DataFrame) -> pd.DataFrame:
     """Country-mean seasonal rainfall table (reuses the district pipeline)."""
+    panel = analysis.ensure_season_cols(panel)
     nat = (panel.groupby(["date", "year", "month", "season", "season_year"],
                          as_index=False)
            .agg(precip=("precip", "mean"), temp=("temp", "mean"),
