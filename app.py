@@ -107,7 +107,7 @@ section[data-testid="stSidebar"] [data-testid="stMetricValue"] { color:#f8fafc; 
 .enso-footer { position:fixed; left:0; bottom:0; width:100%; z-index:1000;
     background:rgba(15,23,42,.97); backdrop-filter:blur(8px); color:#cbd5e1;
     border-top:1px solid #1e293b; padding:8px 20px; font-size:.8rem;
-    display:flex; justify-content:space-between; align-items:center; gap:10px; }
+    display:flex; justify-content:center; align-items:center; gap:10px; text-align:center; }
 .enso-footer a { color:#38bdf8; font-weight:700; text-decoration:none; }
 .enso-footer .muted { color:#64748b; }
 
@@ -1197,9 +1197,8 @@ Kogan (1995).*
 st.markdown(f"""
 <div class="enso-footer">
   <span>Developed by
-     <a href="https://dineshmadhushanka.vercel.app/" target="_blank">Dinesh Madhushanka ↗</a></span>
-  <span><span class="hide-sm">🌊 El Niño × Sri Lanka · </span>
-     <span class="muted">analytical aid, not a forecast ·
-     CHIRPS {panel['date'].min():%Y}–{panel['date'].max():%Y}</span></span>
+     <a href="https://dineshmadhushanka.vercel.app/" target="_blank">Dinesh Madhushanka ↗</a>
+     <span class="hide-sm muted">&nbsp;·&nbsp; 🌊 El Niño × Sri Lanka · analytical aid,
+     not a forecast · CHIRPS {panel['date'].min():%Y}–{panel['date'].max():%Y}</span></span>
 </div>
 """, unsafe_allow_html=True)
