@@ -1196,10 +1196,10 @@ Kogan (1995).*
 # --------------------------------------------------------------------------- #
 st.markdown(f"""
 <div class="enso-footer">
+  <span>Developed by
+     <a href="https://dineshmadhushanka.vercel.app/" target="_blank">Dinesh Madhushanka ↗</a></span>
   <span><span class="hide-sm">🌊 El Niño × Sri Lanka · </span>
      <span class="muted">analytical aid, not a forecast ·
      CHIRPS {panel['date'].min():%Y}–{panel['date'].max():%Y}</span></span>
-  <span>Developed by
-     <a href="https://dineshmadhushanka.vercel.app/" target="_blank">Dinesh Madhushanka ↗</a></span>
 </div>
 """, unsafe_allow_html=True)
