@@ -27,7 +27,7 @@ pio.templates["enso"] = go.layout.Template(
 )
 pio.templates.default = "plotly_white+enso"
 
-from enso_lk import (analysis, districts, enso, impacts, report, spi,
+from enso_lk import (analysis, districts, enso, events, impacts, report, spi,
                      vegetation, weather)
 from enso_lk.config import ONI_ELNINO, ONI_LANINA, SEASON_LABELS, SEASONS
 
@@ -151,11 +151,16 @@ def load_core():
     spi_cur = spi.current_spi(spil)
     en_spi3 = spi.elnino_spi(spil, onim, scale=3)
     table = report.assemble_table(imp, comp, spi_cur)
+    # Canonical ENSO event framework (developing year + EP/CP flavour).
+    ev = events.classify_flavour(events.detect_events(onim), events.fetch_nino_indices())
+    dev = events.developing_composite(panel, ev)
+    flav = events.flavour_composite(panel, ev, "SIM", 0)
     return dict(
         geojson=geojson, meta=dmeta, panel=panel, comp=comp, lag=lag, imp=imp,
         cells=dm.groupby("region")["n_cells"].first(),
         span=(dm["date"].min(), dm["date"].max()), spi_cur=spi_cur,
         en_spi3=en_spi3, table=table, summary=impacts.national_summary(imp),
+        events=ev, dev=dev, flavour=flav,
     )
 
 
@@ -252,11 +257,11 @@ with st.sidebar:
         st.rerun()
     st.caption("Analytical aid — not an official forecast.")
 
-PAGES = ["ENSO Status", "Spatial Impact", "Districts",
+PAGES = ["ENSO Status", "ENSO Events", "Spatial Impact", "Districts",
          "Region Details", "Sector Impacts", "Methods"]
 page = option_menu(
     None, PAGES,
-    icons=["graph-up-arrow", "map", "grid-3x3-gap-fill", "geo-alt",
+    icons=["graph-up-arrow", "diagram-3", "map", "grid-3x3-gap-fill", "geo-alt",
            "bar-chart-line-fill", "journal-text"],
     orientation="horizontal", default_index=0,
     styles={
@@ -323,10 +328,78 @@ if page == "ENSO Status":
 
 
 # --------------------------------------------------------------------------- #
+# ENSO Events — canonical developing-year framework + EP/CP flavour
+# --------------------------------------------------------------------------- #
+if page == "ENSO Events":
+    st.subheader("ENSO events — developing-year rainfall response")
+    st.caption("The textbook teleconnection follows an event's life cycle: an "
+               "El Niño develops in year 0, peaks in December–February, and "
+               "decays through year 1. Here Sri Lanka's *national* CHIRPS rainfall "
+               "is composited in **event-relative** seasons across all events "
+               "since 1981 — a stricter, autocorrelation-aware view than tagging "
+               "individual months.")
+
+    dev = D["dev"].dropna(subset=["mean_pct"]).copy()
+    dev["err_low"] = dev["mean_pct"] - dev["ci_low"]
+    dev["err_high"] = dev["ci_high"] - dev["mean_pct"]
+    dev["sig"] = dev["p"].apply(lambda p: "significant (p<0.05)" if p < 0.05
+                                else "suggestive (p<0.10)" if p < 0.10 else "n.s.")
+    figd = px.bar(dev, x="mean_pct", y="rel_season", orientation="h",
+                  color="sig", height=360,
+                  color_discrete_map={"significant (p<0.05)": "#0ea5e9",
+                                      "suggestive (p<0.10)": "#f59e0b", "n.s.": "#cbd5e1"},
+                  labels=dict(mean_pct="national rainfall anomaly (%)", rel_season="",
+                              sig="significance"),
+                  error_x="err_high", error_x_minus="err_low")
+    figd.add_vline(x=0, line_color="#475569")
+    st.plotly_chart(figd, use_container_width=True)
+    st.caption("Bars = mean national rainfall anomaly vs non-event years; whiskers "
+               "= bootstrap 95 % CI. The robust signal is a **wetter second "
+               "inter-monsoon (Oct–Nov) in the developing year**, with drier "
+               "first-inter-monsoon conditions in the following (decay) year.")
+
+    cE1, cE2 = st.columns([3, 2])
+    with cE1:
+        st.markdown("#### Detected El Niño events & Pacific flavour")
+        et = D["events"].copy()
+        et = et[et["y1"] >= D["span"][0].year]   # events with CHIRPS coverage
+        et["event"] = et["y0"].astype(str) + "–" + et["y1"].astype(str).str[-2:]
+        show = et[["event", "peak_oni", "nino3", "nino4", "flavour"]].rename(
+            columns={"peak_oni": "peak ONI", "nino3": "Niño-3", "nino4": "Niño-4",
+                     "flavour": "type"})
+        st.dataframe(show.round(2), use_container_width=True, hide_index=True, height=360)
+    with cE2:
+        st.markdown("#### Eastern- vs Central-Pacific")
+        fl = D["flavour"].dropna(subset=["mean_pct"])
+        figf = px.bar(fl, x="flavour", y="mean_pct", color="flavour", height=300,
+                      color_discrete_map={"Eastern-Pacific": "#ef4444",
+                                          "Central-Pacific": "#8b5cf6"},
+                      labels=dict(mean_pct="Oct–Nov rainfall anomaly (%)", flavour=""))
+        figf.update_layout(showlegend=False)
+        st.plotly_chart(figf, use_container_width=True)
+        st.caption("Oct–Nov response by event type (Niño-3 vs Niño-4 at the peak). "
+                   "Both flavours wet Sri Lanka similarly in this record.")
+    st.info("**Why this differs from the district map.** Compositing by *event* "
+            "(≈13 independent El Niños) instead of by month, and aligning to the "
+            "developing year, recovers the canonical **significant Oct–Nov "
+            "enhancement** — a signal that the stricter month-level, "
+            "FDR-corrected district test reduces to *suggestive*. Both views are "
+            "shown deliberately so you can see how the conclusion depends on the "
+            "statistical framing.")
+
+
+# --------------------------------------------------------------------------- #
 # Tab 2 — Spatial impact map
 # --------------------------------------------------------------------------- #
 if page == "Spatial Impact":
     st.subheader("How the El Niño impact varies across Sri Lanka")
+    st.warning("**Read me:** the *rainfall* layers are data-driven and "
+               "significance-tested (FDR-corrected). The *sector-risk* layers "
+               "(drought / flood / agriculture / hydropower) are a **transparent "
+               "but un-validated heuristic** — they weight the significant rainfall "
+               "signals by sector relevance, and have **not** been calibrated "
+               "against observed droughts, yields, reservoir levels or floods. "
+               "Treat them as indicative, not as measured risk.", icon="⚠️")
     colA, colB = st.columns([1, 2])
     metric = colA.selectbox(
         "Map layer",
@@ -384,11 +457,9 @@ if page == "Spatial Impact":
 
     st.markdown("#### District × season rainfall signal during El Niño (% vs normal)")
     pct = analysis.region_season_matrix(composite, "precip_pct")
-    sig = analysis.region_season_matrix(composite, "significant")
-    # Annotate each cell with the % anomaly plus a marker for significance:
-    #   **  p < 0.05 (significant)    *  p < 0.10 (suggestive)
-    mwp = analysis.region_season_matrix(composite, "mw_p")
-    tp = analysis.region_season_matrix(composite, "t_p")
+    # Annotate each cell with the % anomaly plus an FDR-significance marker:
+    #   **  q < 0.05 (significant)    *  q < 0.10 (suggestive)
+    qm = analysis.region_season_matrix(composite, "q_value")
     text = pct.copy().astype(object)
     for r in pct.index:
         for c in pct.columns:
@@ -396,8 +467,8 @@ if page == "Spatial Impact":
             if pd.isna(v):
                 text.loc[r, c] = ""
                 continue
-            p = np.nanmin([mwp.loc[r, c], tp.loc[r, c]])
-            mark = "**" if p < 0.05 else "*" if p < 0.10 else ""
+            q = qm.loc[r, c]
+            mark = "**" if q < 0.05 else "*" if q < 0.10 else ""
             text.loc[r, c] = f"{v:+.0f}{mark}"
     pct_lbl = pct.rename(columns=SEASON_LABELS)
     pct_lbl.index = [_short(r) for r in pct_lbl.index]
@@ -407,11 +478,12 @@ if page == "Spatial Impact":
     fig_hm.update_layout(height=max(440, 24 * len(pct_lbl) + 90), margin=dict(t=10))
     st.plotly_chart(fig_hm, use_container_width=True)
     st.caption("Blue = wetter than normal during El Niño, red = drier. "
-               "**  = statistically significant (p < 0.05),  *  = suggestive "
-               "(p < 0.10), from a Welch t-test / Mann–Whitney U test against "
-               "neutral years. Note the robust island-wide **March–April drying** "
-               "and the wetter **October–November second inter-monsoon** in the "
-               "south-west and central highlands.")
+               "**  = significant,  *  = suggestive — after **Benjamini–Hochberg "
+               "FDR correction** across all 100 district × season tests, using "
+               "**event-based** (season-year, detrended) samples. Only the robust "
+               "island-wide **March–April drying** survives FDR; the October–"
+               "November wetting is suggestive here (it is significant in the "
+               "event-aligned national composite — see the **ENSO Events** tab).")
 
     st.markdown("#### ENSO lead/lag — how far ONI precedes the rainfall response")
     lag_show = lag_df[["region", "best_lag", "best_r", "best_p"]].copy()
@@ -652,21 +724,22 @@ if page == "Region Details":
     st.markdown("#### Seasonal El Niño signal & statistical test")
     cs = composite[composite["region"] == region].copy()
     cs["season"] = cs["season"].map(SEASON_LABELS)
-    cs["p (min)"] = cs[["t_p", "mw_p"]].min(axis=1)
     cs["95% CI (%)"] = cs.apply(
         lambda r: "n/a" if pd.isna(r["ci_low"]) else f"[{r['ci_low']:+.0f}, {r['ci_high']:+.0f}]",
         axis=1)
-    cs["verdict"] = cs["p (min)"].apply(
-        lambda p: "significant" if p < 0.05 else "suggestive" if p < 0.10 else "not sig.")
+    cs["verdict"] = cs["q_value"].apply(
+        lambda q: "significant" if q < 0.05 else "suggestive" if q < 0.10 else "not sig.")
     table = cs[["season", "n_elnino", "n_neutral", "precip_pct", "cohens_d",
-                "p (min)", "95% CI (%)", "oni_rain_corr", "verdict"]].rename(
-        columns={"season": "Season", "n_elnino": "n El Nino", "n_neutral": "n neutral",
-                 "precip_pct": "rain anom %", "cohens_d": "Cohen's d",
-                 "oni_rain_corr": "ONI corr"})
-    st.dataframe(table.round(2), use_container_width=True, hide_index=True)
-    st.caption("Cohen's d: 0.2 small · 0.5 medium · 0.8 large effect. "
-               "p is the smaller of Welch t-test and Mann-Whitney; CI is a "
-               "2000-sample bootstrap on the percent anomaly.")
+                "q_value", "95% CI (%)", "verdict"]].rename(
+        columns={"season": "Season", "n_elnino": "n El Niño yrs",
+                 "n_neutral": "n neutral yrs", "precip_pct": "rain anom %",
+                 "cohens_d": "Cohen's d", "q_value": "q (FDR)"})
+    st.dataframe(table.round(3), use_container_width=True, hide_index=True)
+    st.caption("Samples are **El Niño vs neutral *years*** (detrended seasonal "
+               "totals), not months — so they are statistically independent. "
+               "**q** is the Benjamini–Hochberg FDR-adjusted p-value across all "
+               "district × season tests; Cohen's _d_ ≈ 0.2 small / 0.5 medium / "
+               "0.8 large; the CI is a 2,000-sample bootstrap on the anomaly.")
 
 
 # --------------------------------------------------------------------------- #
@@ -674,6 +747,11 @@ if page == "Region Details":
 # --------------------------------------------------------------------------- #
 if page == "Sector Impacts":
     st.subheader("Sectoral impact scores — all 25 districts")
+    st.warning("These 0–100 scores are a **transparent heuristic** that weights "
+               "the significance-tested rainfall signals by each zone's "
+               "sector relevance. They are **not** calibrated against observed "
+               "drought, crop-yield, reservoir or flood records — use them to "
+               "compare districts, not as absolute risk.", icon="⚠️")
     show = imp[["region", "zone", "direction", "confidence", "drought", "flood",
                 "agriculture", "hydropower", "overall"]].copy()
     show["region"] = show["region"].map(_short)
@@ -731,61 +809,75 @@ averaged over all 25 district polygons (geoBoundaries ADM2). CHIRPS blends
 thermal-infrared satellite estimates with gauge data, so it captures spatial
 detail that sparse station networks miss.
 
-**3. Anomalies & composites.** Each district-month is expressed as an anomaly
-relative to its own 1981–present climatology, tagged with the *concurrent* ONI,
-and averaged across all El Niño months — yielding the typical El Niño rainfall
-signal **for each district and each monsoon season**. The result is empirical: it
-reflects the observed record rather than an assumed relationship.
+**3. Event-based, detrended composites.** Rainfall is aggregated to **seasonal
+totals per season-year** so the samples are ENSO *years* (~12 El Niño vs ~18
+neutral), **not** autocorrelated months — this respects statistical
+independence. Each district × season series is **linearly detrended** before
+compositing, so a long-term trend cannot be mistaken for an ENSO signal. Each
+season-year is then classified by its mean ONI.
 
-**4. Significance testing.** Every district × season El Niño composite is tested
-against neutral years with **Welch's t-test** *and* the non-parametric
-**Mann–Whitney U** test. We report **Cohen's _d_** (a standardised effect size)
-and a **2,000-sample bootstrap 95 % confidence interval** on the anomaly. Each
-signal is graded significant (p < 0.05), suggestive (p < 0.10), or not
-significant. A **lagged cross-correlation** (ONI leading rainfall by 0–6 months)
-locates the response delay.
+**4. Significance testing with multiple-comparison control.** El Niño years are
+compared with neutral years using **Welch's t-test** *and* the **Mann–Whitney U**
+test, with **Cohen's _d_** and a **2,000-sample bootstrap 95 % CI**. Crucially,
+**Benjamini–Hochberg FDR correction** is applied across all 100 district × season
+tests — so "significant" (q < 0.05) accounts for the many tests run. A lagged
+cross-correlation (ONI leading rainfall 0–6 months) locates the response delay.
 
-**5. Sector impact model.** Risk magnitudes are driven by the
-**confidence-damped effect size** of the *physically causal* season, so a signal
-that fails significance testing contributes almost nothing — noise cannot
-manufacture risk. Each sector's score takes the strongest relevant season
-(a worst-case view), while the wet/dry *direction* uses a signed weighted mean.
-The four scores are drought, flood & landslide, agriculture (paddy / tea) and
-water & hydropower.
+**5. Canonical event framework (ENSO Events tab).** Discrete El Niño events are
+detected (NOAA's five-overlapping-season rule) and aligned to their **developing
+year (Y0) → decay year (Y1)** life cycle, then Sri Lanka's national rainfall is
+composited in event-relative seasons. Events are also split into
+**Eastern-Pacific (canonical)** vs **Central-Pacific (Modoki)** flavours from the
+Niño-3 vs Niño-4 anomaly at the peak. This recovers the literature's significant
+**Oct–Nov developing-year enhancement**, complementing the stricter district view.
 
-**6. Spatial view.** Scores are mapped across Sri Lanka so the geographic
+**6. Sector impact model — a transparent heuristic.** Risk magnitudes are driven
+by the **FDR-confidence-damped effect size** of the physically causal season, so
+a signal that fails multiple-comparison control contributes almost nothing. Each
+sector takes its strongest relevant season (worst-case); direction uses a signed
+weighted mean. **These 0–100 scores are *not* calibrated against observed
+drought, yield, reservoir or flood records** — they are an interpretable
+synthesis for comparing districts, not validated risk estimates.
+
+**7. Spatial view.** Scores are mapped across Sri Lanka so the geographic
 pattern is visible — highest overall exposure in the wet south-west and central
 highlands, the largest drought (SPI) response in the northern dry zone.
 
-**7. Drought index (SPI).** From the CHIRPS series we compute the WMO-recommended
+**8. Drought index (SPI).** From the CHIRPS series we compute the WMO-recommended
 **Standardized Precipitation Index** (SPI-3 / 6 / 12) by fitting a gamma
 distribution per district and calendar month (McKee et al., 1993), giving both
 the *current* drought state and the *El Niño* composite SPI per district.
 
-**8. Satellite vegetation (MODIS).** On demand for a chosen district, NASA
+**9. Satellite vegetation (MODIS).** On demand for a chosen district, NASA
 **MODIS MOD13Q1** 250 m NDVI (2000–present) is retrieved from the ORNL DAAC and
 converted to the **Vegetation Condition Index** (VCI; Kogan, 1995), then
 composited by ENSO phase as a satellite agricultural-drought cross-check.
 
-**9. Reporting.** The district table (impact scores, seasonal satellite anomalies
+**10. Reporting.** The district table (impact scores, seasonal satellite anomalies
 and current SPI) exports to **CSV** and a multi-page **PDF** report.
 
-#### Key finding
-In the CHIRPS record, El Niño's most robust effect on Sri Lanka is a **large,
-statistically significant reduction in March–April (first inter-monsoon)
-rainfall across all 25 districts**, together with **wetter October–November
-(second inter-monsoon)** conditions in the south-west and highlands that raise
-flood and landslide risk. The south-west and north-east monsoon signals are
-comparatively weak.
+#### Key findings
+- **First inter-monsoon (March–April) drying** survives FDR correction in
+  **21 / 25 districts** (q ≈ 0.0002) — the most robust El Niño rainfall signal,
+  appearing mainly in the event **decay year**.
+- **Second inter-monsoon (October–November) enhancement** (+18 % nationally,
+  p ≈ 0.003) is significant in the **event-aligned developing-year composite**,
+  but only *suggestive* in the stricter per-district FDR test — both views are
+  shown so the dependence on statistical framing is explicit.
+- The **south-west and north-east monsoon signals are weak / not significant**;
+  Eastern- and Central-Pacific events affect Sri Lanka similarly in this record.
 
-#### Caveats
-- CHIRPS (~5 km) smooths very local rainfall extremes; treat individual
-  magnitudes as indicative rather than exact.
-- The linear ONI projection is a simple heuristic, **not** a dynamical forecast —
-  for operational outlooks consult NOAA CPC and Sri Lanka's Department of
-  Meteorology.
-- The composite pools El Niño events of differing strength and "flavour"
-  (eastern- vs central-Pacific), which can mask event-to-event variation.
+#### Caveats & honest limitations
+- The **sector impact scores are an un-validated heuristic** (not calibrated to
+  observed droughts, yields, reservoirs or floods) — comparative, not absolute.
+- CHIRPS (~5 km) smooths very local extremes and is weaker over the orographic
+  central highlands; NDVI is confounded by irrigation and land-use.
+- Districts are spatially correlated, so the count of "significant" districts is
+  not 25 independent pieces of evidence.
+- The linear ONI projection is a heuristic, **not** a dynamical forecast — for
+  operational outlooks consult NOAA CPC and Sri Lanka's Department of Meteorology.
+- Only ~12 El Niño events constrain the composite, and event "flavour" /
+  multi-year persistence add residual uncertainty.
 
 *Sources: NOAA Climate Prediction Center (ONI); UCSB Climate Hazards Center
 (CHIRPS); NASA MODIS / ORNL DAAC (NDVI); geoBoundaries (district polygons).

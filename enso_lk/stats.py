@@ -115,6 +115,32 @@ class LagResult:
     best_p: float
 
 
+def benjamini_hochberg(pvals) -> np.ndarray:
+    """Benjamini-Hochberg false-discovery-rate adjusted p-values (q-values).
+
+    Controls the expected proportion of false positives across the family of
+    tests — essential here because we run ~100 district x season composites and
+    would otherwise expect several "significant" results by chance alone. NaNs
+    are passed through (tests that could not be run).
+    """
+    p = np.asarray(pvals, float)
+    out = np.full(p.shape, np.nan)
+    mask = ~np.isnan(p)
+    pm = p[mask]
+    n = pm.size
+    if n == 0:
+        return out
+    order = np.argsort(pm)
+    ranked = pm[order]
+    q = ranked * n / (np.arange(1, n + 1))
+    q = np.minimum.accumulate(q[::-1])[::-1]      # enforce monotonicity
+    q = np.clip(q, 0.0, 1.0)
+    res = np.empty(n)
+    res[order] = q
+    out[mask] = res
+    return out
+
+
 def lag_correlation(oni: np.ndarray, rain_anom: np.ndarray,
                     max_lag: int = 6) -> LagResult:
     """Cross-correlate ONI (leading) against rainfall anomaly at lags 0..max_lag.
