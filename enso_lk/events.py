@@ -20,8 +20,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from . import cache, stats as st
-from .analysis import seasonal_table
+from . import analysis, cache, stats as st
 from .config import ONI_ELNINO
 
 NINO_URL = "https://www.cpc.ncep.noaa.gov/data/indices/ersst5.nino.mth.91-20.ascii"
@@ -121,7 +120,7 @@ def _national_seasonal(panel: pd.DataFrame) -> pd.DataFrame:
            .agg(precip=("precip", "mean"), temp=("temp", "mean"),
                 oni=("oni", "mean")))
     nat["region"] = "Sri Lanka"
-    return seasonal_table(nat)
+    return analysis.seasonal_table(nat)
 
 
 # Event-relative seasons: (label, actual monsoon season, year offset from Y0).
