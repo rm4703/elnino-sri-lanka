@@ -1,0 +1,17 @@
+[theme]
+base = "light"
+primaryColor = "#0EA5E9"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F1F5F9"
+textColor = "#0F172A"
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[client]
+# Hide the hamburger menu and the "Deploy" button for a clean, app-like UI.
+toolbarMode = "minimal"

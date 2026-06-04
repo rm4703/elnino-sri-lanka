@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.cache/
+.venv/
+venv/
+.DS_Store
+.streamlit/secrets.toml
+
+# Local Claude Code settings
+.claude/
