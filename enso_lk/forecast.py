@@ -1,22 +1,21 @@
 """Real-time statistical ENSO forecast from the live ONI series.
 
 Everything here is computed at run time from the observed Oceanic Niño Index —
-no values are hard-coded and nothing is pre-baked. The model is a **persistence +
-tendency** linear regression: for each lead *k* it regresses historical ONI(t+k)
-on both the current level **ONI(t)** and the recent 3-month **tendency
-ONI(t)-ONI(t-3)**. The tendency term is essential — it lets the forecast capture
-ENSO's seasonal *development* (a warming ONI in boreal spring tends to keep
-warming toward a winter peak), whereas plain damped persistence can only relax
-toward climatology and therefore systematically *misses developing events*.
+no values are hard-coded. The model is a **month-conditioned persistence +
+tendency** regression: to forecast the target calendar month *M* from the current
+month *C*, it regresses historical ONI(year, M) on the same year's ONI(year, C)
+and its 3-month tendency. Conditioning on the *target month* is what makes the
+forecast respect ENSO's strong seasonal cycle — in particular its **phase-locking
+to a December peak**: the learned May→December relationship already encodes that
+spring El Niños keep growing into winter, so a rising spring ONI is projected to
+*strengthen toward a winter peak* rather than mean-revert. Plain (month-blind)
+persistence cannot do this and systematically under-forecasts the winter peak.
 
 Forecast uncertainty at each lead is the back-tested regression residual spread,
 and the El Niño / Neutral / La Niña probabilities follow from a normal
-distribution about the forecast.
-
-This remains a transparent statistical model, **not** a dynamical coupled
-ocean–atmosphere simulation — but with the tendency term it broadly tracks the
-official outlooks (e.g. it favours a developing El Niño when the ONI is rising).
-For the authoritative multi-model forecast see NOAA CPC / IRI.
+distribution about the forecast. This is still a transparent **statistical**
+model, not a dynamical coupled-model simulation; for the authoritative
+multi-model outlook see NOAA CPC / IRI (shown alongside for comparison).
 """
 
 from __future__ import annotations
@@ -32,42 +31,52 @@ _SEAS = ["DJF", "JFM", "FMA", "MAM", "AMJ", "MJJ",
 _LAG = 3  # months used to measure the ONI tendency / momentum
 
 
+def _shift_ym(year: int, month: int, k: int) -> tuple[int, int]:
+    idx = (year * 12 + (month - 1)) + k
+    return idx // 12, idx % 12 + 1
+
+
 def enso_forecast(oni_monthly: pd.Series, max_lead: int = 9) -> pd.DataFrame:
-    """Persistence+tendency ONI forecast with calibrated probabilities.
+    """Month-conditioned ONI forecast with calibrated probabilities.
 
     Returns one row per lead (1..max_lead): date, seas, oni (central forecast),
     sd, lower/upper (95 %), p_elnino, p_neutral, p_lanina.
     """
     s = oni_monthly.dropna().sort_index()
-    x = s.to_numpy(dtype=float)
-    n = x.size
-    last_val = float(x[-1])
-    tend_now = float(x[-1] - x[-1 - _LAG]) if n > _LAG else 0.0
+    om = {(d.year, d.month): float(v) for d, v in s.items()}
     last_date = s.index[-1]
+    C, LY = last_date.month, last_date.year
+    last_val = om[(LY, C)]
+    ym3 = _shift_ym(LY, C, -_LAG)
+    tend_now = last_val - om[ym3] if ym3 in om else 0.0
 
     rows = []
     for k in range(1, max_lead + 1):
-        # Design: predict ONI(t+k) from level ONI(t) and tendency ONI(t)-ONI(t-3).
-        hi = n - k
-        if hi - _LAG < 12:
+        ty, M = _shift_ym(LY, C, k)
+        # Build (level, tendency) -> target pairs across all years, fixing the
+        # predictor month C and target month M (so the seasonal cycle is built in).
+        L, T, Y = [], [], []
+        for yr in range(min(y for y, _ in om), LY + 1):
+            p3 = _shift_ym(yr, C, -_LAG)
+            tgt = _shift_ym(yr, C, k)
+            if (yr, C) in om and p3 in om and tgt in om:
+                L.append(om[(yr, C)])
+                T.append(om[(yr, C)] - om[p3])
+                Y.append(om[tgt])
+        if len(Y) < 12:
             continue
-        level = x[_LAG:hi]
-        tend = x[_LAG:hi] - x[:hi - _LAG]
-        y = x[_LAG + k:]
-        m = min(len(level), len(tend), len(y))
-        level, tend, y = level[:m], tend[:m], y[:m]
-        X = np.column_stack([np.ones(m), level, tend])
-        beta, *_ = np.linalg.lstsq(X, y, rcond=None)
-        resid = y - X @ beta
+        L, T, Y = np.array(L), np.array(T), np.array(Y)
+        X = np.column_stack([np.ones(len(L)), L, T])
+        beta, *_ = np.linalg.lstsq(X, Y, rcond=None)
+        resid = Y - X @ beta
         sd = float(np.std(resid, ddof=1))
-        fc = float(beta[0] + beta[1] * last_val + beta[2] * tend_now)
-        fc = float(np.clip(fc, -3.0, 3.0))
+        fc = float(np.clip(beta[0] + beta[1] * last_val + beta[2] * tend_now, -3.0, 3.0))
         p_el = float(stats.norm.sf((ONI_ELNINO - fc) / sd)) if sd > 0 else float(fc >= ONI_ELNINO)
         p_la = float(stats.norm.cdf((ONI_LANINA - fc) / sd)) if sd > 0 else float(fc <= ONI_LANINA)
         p_neu = max(0.0, 1.0 - p_el - p_la)
-        d = last_date + pd.DateOffset(months=k)
+        d = pd.Timestamp(ty, M, 1)
         rows.append(dict(
-            lead=k, date=d, seas=_SEAS[(d.month - 1) % 12],
+            lead=k, date=d, seas=_SEAS[(M - 1) % 12],
             oni=fc, sd=sd, lower=fc - 1.96 * sd, upper=fc + 1.96 * sd,
             p_elnino=p_el, p_neutral=p_neu, p_lanina=p_la,
         ))

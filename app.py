@@ -28,7 +28,7 @@ pio.templates["enso"] = go.layout.Template(
 pio.templates.default = "plotly_white+enso"
 
 from enso_lk import (analysis, districts, enso, events, forecast, impacts, iod,
-                     report, spi, vegetation, weather)
+                     official, report, spi, vegetation, weather)
 from enso_lk.config import ONI_ELNINO, ONI_LANINA, SEASON_LABELS, SEASONS
 
 st.set_page_config(page_title="El Niño · Sri Lanka", layout="wide", page_icon="🌊",
@@ -135,7 +135,7 @@ section[data-testid="stSidebar"] [data-testid="stMetricValue"] { color:#f8fafc; 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
 def load_enso():
     oni = enso.fetch_oni()
-    return oni, enso.assess_status(oni)
+    return oni, enso.assess_status(oni), official.fetch_cpc_outlook()
 
 
 @st.cache_data(ttl=24 * 3600, show_spinner=False)
@@ -187,7 +187,7 @@ def _short(name: str) -> str:
 
 
 try:
-    oni_df, status = load_enso()
+    oni_df, status, cpc_outlook = load_enso()
 except Exception as exc:  # noqa: BLE001
     st.error(f"Failed to load ENSO data (NOAA): {exc}")
     st.stop()
@@ -322,8 +322,21 @@ if page == "ENSO Status":
     fig.update_layout(height=420, yaxis_title="ONI anomaly (°C)", margin=dict(t=10))
     st.plotly_chart(fig, use_container_width=True)
 
+    # Official CPC outlook (dynamical-model consensus) for comparison.
+    if cpc_outlook.get("available"):
+        prob_txt = " · ".join(f"**{p}%** El Niño in {per}" for p, per in cpc_outlook["probs"][:2])
+        st.success(
+            f"**Official outlook — NOAA CPC{(' (' + cpc_outlook['status'] + ')') if cpc_outlook.get('status') else ''}.** "
+            + (cpc_outlook.get("synopsis") or "")
+            + (f"\n\nHeadline probabilities: {prob_txt}." if prob_txt else ""),
+            icon="🛰️")
+        st.caption("↑ The authoritative multi-model consensus (live from NOAA CPC). "
+                   "Compare it with the in-house statistical forecast below — they "
+                   "should broadly agree on direction; the statistical model is "
+                   "typically a little more conservative on the winter peak.")
+
     if not fc.empty:
-        st.markdown("#### Real-time ENSO outlook — probabilities by season")
+        st.markdown("#### In-house statistical ENSO outlook — probabilities by season")
         st.caption(forecast.headline(fc))
         prob = fc.melt(id_vars=["seas", "date"],
                        value_vars=["p_elnino", "p_neutral", "p_lanina"],
@@ -930,8 +943,11 @@ if page == "Methods":
 **1. ENSO state (NOAA CPC).** The Oceanic Niño Index (ONI) — the three-month
 running mean sea-surface-temperature anomaly in the Niño-3.4 region — is fetched
 live. An ONI at or above **+0.5 °C** sustained over five overlapping seasons
-defines El Niño. The system also fits a short linear trend to the most recent
-seasons to flag a **developing** El Niño before it crosses the threshold.
+defines El Niño. The ENSO Status tab adds an in-house **month-conditioned
+statistical forecast** (persistence + tendency that respects ENSO's phase-locking
+to a December peak, computed live from the ONI) and shows it next to the
+**official NOAA CPC dynamical-model outlook** — fetched live — for direct
+comparison.
 
 **2. Satellite rainfall (UCSB CHIRPS).** Gridded satellite-and-station rainfall
 from **CHIRPS v2.0** (~5 km, 1981–present) is clipped to Sri Lanka and zonally
