@@ -8,6 +8,7 @@ __pycache__/
 !.cache/lka_adm2.geojson
 !.cache/ndvi_*.json
 !.cache/nino_*.json
+!.cache/dmi_*.json
 
 .venv/
 venv/

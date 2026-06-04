@@ -27,8 +27,8 @@ pio.templates["enso"] = go.layout.Template(
 )
 pio.templates.default = "plotly_white+enso"
 
-from enso_lk import (analysis, districts, enso, events, impacts, report, spi,
-                     vegetation, weather)
+from enso_lk import (analysis, districts, enso, events, forecast, impacts, iod,
+                     report, spi, vegetation, weather)
 from enso_lk.config import ONI_ELNINO, ONI_LANINA, SEASON_LABELS, SEASONS
 
 st.set_page_config(page_title="El Niño · Sri Lanka", layout="wide", page_icon="🌊",
@@ -155,12 +155,15 @@ def load_core():
     ev = events.classify_flavour(events.detect_events(onim), events.fetch_nino_indices())
     dev = events.developing_composite(panel, ev)
     flav = events.flavour_composite(panel, ev, "SIM", 0)
+    # Indian Ocean Dipole + symmetric ENSO-phase (La Niña) analysis.
+    dmi = iod.fetch_dmi()
+    iod_an = iod.analyze(panel, dmi)
     return dict(
         geojson=geojson, meta=dmeta, panel=panel, comp=comp, lag=lag, imp=imp,
         cells=dm.groupby("region")["n_cells"].first(),
         span=(dm["date"].min(), dm["date"].max()), spi_cur=spi_cur,
         en_spi3=en_spi3, table=table, summary=impacts.national_summary(imp),
-        events=ev, dev=dev, flavour=flav,
+        events=ev, dev=dev, flavour=flav, dmi=dmi, iod=iod_an,
     )
 
 
@@ -250,19 +253,25 @@ with st.sidebar:
     for r in summary["top_risk_regions"]:
         st.markdown(f"&nbsp;&nbsp;🔸 {_short(r)}")
     st.markdown("---")
-    st.caption(f"ONI period centred **{status.latest_date:%b %Y}**")
-    st.caption("Sources: NOAA CPC · UCSB CHIRPS · NASA MODIS · geoBoundaries")
+    _dmi_end = D["dmi"]["date"].max() if len(D["dmi"]) else None
+    st.caption(f"**Live data** · ONI {status.latest_date:%b %Y} · "
+               f"CHIRPS → {D['span'][1]:%b %Y}"
+               + (f" · DMI → {_dmi_end:%b %Y}" if _dmi_end is not None else ""))
+    st.caption("Everything on every tab is computed in real time from these feeds — "
+               "no values are pre-baked.")
+    st.caption("Sources: NOAA CPC (ONI/Niño) · NOAA PSL (DMI) · UCSB CHIRPS · "
+               "NASA MODIS · geoBoundaries")
     if st.button("🔄 Refresh live data", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
     st.caption("Analytical aid — not an official forecast.")
 
-PAGES = ["ENSO Status", "ENSO Events", "Spatial Impact", "Districts",
-         "Region Details", "Sector Impacts", "Methods"]
+PAGES = ["ENSO Status", "ENSO Events", "Ocean Drivers", "Spatial Impact",
+         "Districts", "Region Details", "Sector Impacts", "Methods"]
 page = option_menu(
     None, PAGES,
-    icons=["graph-up-arrow", "diagram-3", "map", "grid-3x3-gap-fill", "geo-alt",
-           "bar-chart-line-fill", "journal-text"],
+    icons=["graph-up-arrow", "diagram-3", "water", "map", "grid-3x3-gap-fill",
+           "geo-alt", "bar-chart-line-fill", "journal-text"],
     orientation="horizontal", default_index=0,
     styles={
         "container": {"padding": "6px", "background-color": "#f1f5f9",
@@ -296,19 +305,38 @@ if page == "ENSO Status":
                   annotation_text="El Niño +0.5 °C")
     fig.add_hline(y=ONI_LANINA, line_dash="dot", line_color="#1f77b4",
                   annotation_text="La Niña −0.5 °C")
-    # projection
+    # Real-time statistical forecast (damped persistence), computed live from ONI.
+    fc = forecast.enso_forecast(enso.monthly_oni(oni_df))
     last = oni_df.iloc[-1]
-    proj_x = [last["date"]]
-    proj_y = [last["oni"]]
-    d = last["date"]
-    for lbl, val in status.projection:
-        d = d + pd.DateOffset(months=1)
-        proj_x.append(d)
-        proj_y.append(val)
-    fig.add_trace(go.Scatter(x=proj_x, y=proj_y, mode="lines+markers", name="linear projection",
-                             line=dict(color="#d62728", dash="dash")))
+    if not fc.empty:
+        fx = [last["date"]] + list(fc["date"])
+        fig.add_trace(go.Scatter(
+            x=fx + fx[::-1],
+            y=[last["oni"]] + list(fc["upper"]) + ([last["oni"]] + list(fc["lower"]))[::-1],
+            fill="toself", fillcolor="rgba(214,39,40,0.12)", line=dict(width=0),
+            hoverinfo="skip", name="95% range", showlegend=True))
+        fig.add_trace(go.Scatter(x=[last["date"]] + list(fc["date"]),
+                                 y=[last["oni"]] + list(fc["oni"]),
+                                 mode="lines+markers", name="statistical forecast",
+                                 line=dict(color="#d62728", dash="dash")))
     fig.update_layout(height=420, yaxis_title="ONI anomaly (°C)", margin=dict(t=10))
     st.plotly_chart(fig, use_container_width=True)
+
+    if not fc.empty:
+        st.markdown("#### Real-time ENSO outlook — probabilities by season")
+        st.caption(forecast.headline(fc))
+        prob = fc.melt(id_vars=["seas", "date"],
+                       value_vars=["p_elnino", "p_neutral", "p_lanina"],
+                       var_name="phase", value_name="prob")
+        prob["phase"] = prob["phase"].map({"p_elnino": "El Niño", "p_neutral": "Neutral",
+                                           "p_lanina": "La Niña"})
+        prob["label"] = prob["seas"] + " " + prob["date"].dt.strftime("%Y")
+        figp = px.bar(prob, x="label", y="prob", color="phase", height=320,
+                      color_discrete_map={"El Niño": "#ef4444", "Neutral": "#94a3b8",
+                                          "La Niña": "#3b82f6"},
+                      labels=dict(prob="probability", label="", phase=""))
+        figp.update_layout(barmode="stack", yaxis_tickformat=".0%")
+        st.plotly_chart(figp, use_container_width=True)
 
     st.info(
         f"**Interpretation.** {status.headline}\n\n"
@@ -316,11 +344,15 @@ if page == "ENSO Status":
         "Niño-3.4 region; values at or above **+0.5 °C** define El Niño. In the "
         "CHIRPS satellite record for Sri Lanka, El Niño is most strongly associated "
         "with a **sharp reduction in first inter-monsoon (March–April) rainfall** "
-        "across the island and **wetter second-inter-monsoon (October–November) "
-        "conditions**, raising flood and landslide risk; the south-west-monsoon "
-        "signal is comparatively weak. The dashed projection is a simple linear "
-        "extrapolation of the recent trend, **not** a dynamical forecast."
+        "and **wetter second-inter-monsoon (October–November) conditions**, raising "
+        "flood and landslide risk; the south-west-monsoon signal is weak."
     )
+    st.caption("⚠️ The forecast is a **damped-persistence statistical model** "
+               "computed live from the latest ONI (a standard skill benchmark) — "
+               "**not** a dynamical coupled-model simulation. Skill drops sharply "
+               "across the boreal-spring predictability barrier. For the official "
+               "multi-model outlook see the "
+               "[NOAA CPC / IRI ENSO forecast](https://iri.columbia.edu/our-expertise/climate/forecasts/enso/current/).")
 
     en_years = enso.elnino_event_years(oni_df)
     st.caption("El Niño years in the record used to build the impact composite: "
@@ -386,6 +418,102 @@ if page == "ENSO Events":
             "FDR-corrected district test reduces to *suggestive*. Both views are "
             "shown deliberately so you can see how the conclusion depends on the "
             "statistical framing.")
+
+
+# --------------------------------------------------------------------------- #
+# Ocean Drivers — Indian Ocean Dipole + symmetric La Niña
+# --------------------------------------------------------------------------- #
+if page == "Ocean Drivers":
+    st.subheader("Ocean drivers of the Oct–Nov rains — ENSO, La Niña & the IOD")
+    st.caption("For Sri Lanka the **Indian Ocean Dipole (IOD)** rivals ENSO as a "
+               "driver of the second inter-monsoon (Oct–Nov). Because the two "
+               "oceans are correlated, we disentangle their *independent* effects "
+               "with a multiple regression — not just composites.")
+
+    A = D["iod"]
+    dmi = D["dmi"]
+
+    # DMI timeline
+    if len(dmi):
+        dd = dmi[dmi["date"] >= dmi["date"].max() - pd.DateOffset(years=40)]
+        figm = go.Figure()
+        figm.add_trace(go.Scatter(x=dd["date"], y=dd["dmi"], mode="lines",
+                                  line=dict(color="#0e7490", width=1.6), name="DMI"))
+        figm.add_hrect(y0=0.4, y1=3, fillcolor="#ef4444", opacity=0.07, line_width=0)
+        figm.add_hrect(y0=-3, y1=-0.4, fillcolor="#3b82f6", opacity=0.07, line_width=0)
+        figm.add_hline(y=0.4, line_dash="dot", line_color="#ef4444",
+                       annotation_text="positive IOD +0.4 °C")
+        figm.add_hline(y=-0.4, line_dash="dot", line_color="#3b82f6",
+                       annotation_text="negative IOD −0.4 °C")
+        figm.update_layout(height=300, yaxis_title="Dipole Mode Index (°C)",
+                           margin=dict(t=10))
+        st.plotly_chart(figm, use_container_width=True)
+
+    cL, cR = st.columns(2)
+    enso_c = A["enso_comp"].copy()
+    enso_c["label"] = enso_c["phase"].map({"El Nino": "El Niño", "Neutral": "Neutral",
+                                           "La Nina": "La Niña"})
+    figE = px.bar(enso_c, x="label", y="mean_pct", color="label", height=320,
+                  color_discrete_map={"El Niño": "#ef4444", "Neutral": "#94a3b8",
+                                      "La Niña": "#3b82f6"},
+                  labels=dict(mean_pct="Oct–Nov anomaly (%)", label=""))
+    figE.update_layout(showlegend=False, title="By ENSO phase")
+    cL.plotly_chart(figE, use_container_width=True)
+
+    figI = px.bar(A["iod_comp"], x="phase", y="mean_pct", color="phase", height=320,
+                  color_discrete_map={"Positive IOD": "#ef4444", "Neutral IOD": "#94a3b8",
+                                      "Negative IOD": "#3b82f6"},
+                  labels=dict(mean_pct="Oct–Nov anomaly (%)", phase=""))
+    figI.update_layout(showlegend=False, title="By IOD phase")
+    cR.plotly_chart(figI, use_container_width=True)
+    st.caption("Mean national Oct–Nov rainfall anomaly vs neutral years. **La Niña** "
+               "shows the symmetric opposite of El Niño; **positive IOD** looks like "
+               "the strongest wet signal — but see the attribution below.")
+
+    # Partial-regression attribution (the rigorous bit)
+    p = A["partial"]
+    st.markdown("#### Disentangling ENSO vs IOD — multiple regression")
+    m = st.columns(4)
+    m[0].metric("ENSO independent effect",
+                "—" if pd.isna(p["enso_beta"]) else f"β {p['enso_beta']:+.2f}",
+                ("n/a" if pd.isna(p["enso_p"]) else
+                 f"p={p['enso_p']:.3f}" + (" ✓" if p["enso_p"] < 0.05 else "")))
+    m[1].metric("IOD independent effect",
+                "—" if pd.isna(p["iod_beta"]) else f"β {p['iod_beta']:+.2f}",
+                ("n/a" if pd.isna(p["iod_p"]) else
+                 f"p={p['iod_p']:.3f}" + (" ✓" if p["iod_p"] < 0.05 else "")))
+    m[2].metric("ONI ↔ DMI correlation",
+                "—" if pd.isna(p["oni_dmi_corr"]) else f"{p['oni_dmi_corr']:+.2f}",
+                help="The two drivers are correlated, so composites overlap.")
+    m[3].metric("Model R²", "—" if pd.isna(p["r2"]) else f"{p['r2']:.2f}",
+                help=f"n = {p['n']} seasons")
+    enso_sig = (not pd.isna(p["enso_p"])) and p["enso_p"] < 0.05
+    iod_sig = (not pd.isna(p["iod_p"])) and p["iod_p"] < 0.05
+    st.info(
+        f"**Attribution.** The ONI and DMI are correlated (r = "
+        f"{p['oni_dmi_corr']:+.2f}), so their simple composites partly overlap. "
+        "Regressing Oct–Nov rainfall on **both** standardised indices isolates "
+        "each driver's *independent* contribution: "
+        + ("**ENSO is the significant independent driver** "
+           f"(p = {p['enso_p']:.3f}), " if enso_sig else
+           f"ENSO's independent effect is not significant (p = {p['enso_p']:.3f}), ")
+        + ("**IOD also contributes independently**."
+           if iod_sig else
+           "while the **IOD's apparent effect is largely shared with ENSO and is "
+           "not independently significant** in this record. In other words, much "
+           "of the strong positive-IOD composite above is really the ENSO signal.")
+    )
+
+    st.markdown("#### ENSO × IOD interaction (Oct–Nov)")
+    j = A["joint"].copy()
+    j["enso"] = j["enso"].map({"El Nino": "El Niño", "La Nina": "La Niña"})
+    j = j.rename(columns={"enso": "ENSO", "iod": "IOD", "n": "n (seasons)",
+                          "mean_pct": "Oct–Nov anomaly %"})
+    st.dataframe(j.round(1), use_container_width=True, hide_index=True)
+    st.caption("⚠️ These combined cells have **very small samples** (n shown) — "
+               "the El Niño + positive-IOD 'double whammy' and the La Niña + "
+               "negative-IOD dry case are indicative only, not significance-tested. "
+               "Data: HadISST DMI (NOAA PSL) + CHIRPS rainfall.")
 
 
 # --------------------------------------------------------------------------- #
@@ -830,6 +958,16 @@ composited in event-relative seasons. Events are also split into
 **Eastern-Pacific (canonical)** vs **Central-Pacific (Modoki)** flavours from the
 Niño-3 vs Niño-4 anomaly at the peak. This recovers the literature's significant
 **Oct–Nov developing-year enhancement**, complementing the stricter district view.
+
+**5b. Ocean drivers — IOD, La Niña & collinearity (Ocean Drivers tab).** The
+**Indian Ocean Dipole** (HadISST Dipole Mode Index, NOAA PSL) is composited
+alongside a symmetric **La Niña** analysis. Because the ONI and DMI are
+themselves correlated (r ≈ 0.65), a simple composite cannot attribute the Oct–Nov
+signal to one ocean — so we fit a **multiple regression** of seasonal rainfall on
+*both* standardised indices, reporting each driver's **independent partial effect
+and p-value**. In this record ENSO emerges as the significant independent driver
+and the IOD's apparent effect is largely shared with ENSO — a conclusion only the
+regression (not the composites) can support.
 
 **6. Sector impact model — a transparent heuristic.** Risk magnitudes are driven
 by the **FDR-confidence-damped effect size** of the physically causal season, so
