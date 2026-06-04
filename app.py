@@ -347,12 +347,14 @@ if page == "ENSO Status":
         "and **wetter second-inter-monsoon (October–November) conditions**, raising "
         "flood and landslide risk; the south-west-monsoon signal is weak."
     )
-    st.caption("⚠️ The forecast is a **damped-persistence statistical model** "
-               "computed live from the latest ONI (a standard skill benchmark) — "
-               "**not** a dynamical coupled-model simulation. Skill drops sharply "
-               "across the boreal-spring predictability barrier. For the official "
-               "multi-model outlook see the "
-               "[NOAA CPC / IRI ENSO forecast](https://iri.columbia.edu/our-expertise/climate/forecasts/enso/current/).")
+    st.caption("⚠️ The forecast is a **statistical persistence-plus-tendency model** "
+               "computed live from the latest ONI — it uses the current level *and* "
+               "its recent momentum, so it captures ENSO *development* (it favours a "
+               "growing El Niño while the ONI is rising, broadly tracking the "
+               "official outlooks). It is **not** a dynamical coupled-model "
+               "simulation, and skill still drops across the boreal-spring "
+               "predictability barrier. For the authoritative multi-model forecast "
+               "see the [NOAA CPC / IRI ENSO outlook](https://iri.columbia.edu/our-expertise/climate/forecasts/enso/current/).")
 
     en_years = enso.elnino_event_years(oni_df)
     st.caption("El Niño years in the record used to build the impact composite: "

@@ -1,18 +1,22 @@
 """Real-time statistical ENSO forecast from the live ONI series.
 
 Everything here is computed at run time from the observed Oceanic Niño Index —
-no values are hard-coded and nothing is pre-baked. The method is **damped
-persistence**, the standard skill benchmark for ENSO: the forecast at lead *k*
-is the current ONI scaled by the historical lag-*k* autocorrelation, which
-naturally relaxes toward climatology as the lead grows. Forecast uncertainty at
-each lead is estimated by **back-testing** that same rule over the whole record,
+no values are hard-coded and nothing is pre-baked. The model is a **persistence +
+tendency** linear regression: for each lead *k* it regresses historical ONI(t+k)
+on both the current level **ONI(t)** and the recent 3-month **tendency
+ONI(t)-ONI(t-3)**. The tendency term is essential — it lets the forecast capture
+ENSO's seasonal *development* (a warming ONI in boreal spring tends to keep
+warming toward a winter peak), whereas plain damped persistence can only relax
+toward climatology and therefore systematically *misses developing events*.
+
+Forecast uncertainty at each lead is the back-tested regression residual spread,
 and the El Niño / Neutral / La Niña probabilities follow from a normal
 distribution about the forecast.
 
-This is a transparent statistical model, **not** a dynamical (coupled
-ocean–atmosphere) simulation; for the official multi-model outlook see NOAA CPC /
-IRI. Damped persistence is nonetheless competitive with dynamical models at short
-leads and is the honest, reproducible choice for an in-app real-time forecast.
+This remains a transparent statistical model, **not** a dynamical coupled
+ocean–atmosphere simulation — but with the tendency term it broadly tracks the
+official outlooks (e.g. it favours a developing El Niño when the ONI is rising).
+For the authoritative multi-model forecast see NOAA CPC / IRI.
 """
 
 from __future__ import annotations
@@ -25,28 +29,39 @@ from .config import ONI_ELNINO, ONI_LANINA
 
 _SEAS = ["DJF", "JFM", "FMA", "MAM", "AMJ", "MJJ",
          "JJA", "JAS", "ASO", "SON", "OND", "NDJ"]
+_LAG = 3  # months used to measure the ONI tendency / momentum
 
 
 def enso_forecast(oni_monthly: pd.Series, max_lead: int = 9) -> pd.DataFrame:
-    """Damped-persistence ONI forecast with calibrated probabilities.
+    """Persistence+tendency ONI forecast with calibrated probabilities.
 
     Returns one row per lead (1..max_lead): date, seas, oni (central forecast),
     sd, lower/upper (95 %), p_elnino, p_neutral, p_lanina.
     """
     s = oni_monthly.dropna().sort_index()
     x = s.to_numpy(dtype=float)
+    n = x.size
     last_val = float(x[-1])
+    tend_now = float(x[-1] - x[-1 - _LAG]) if n > _LAG else 0.0
     last_date = s.index[-1]
 
     rows = []
     for k in range(1, max_lead + 1):
-        a, b = x[:-k], x[k:]
-        if len(a) < 12:
+        # Design: predict ONI(t+k) from level ONI(t) and tendency ONI(t)-ONI(t-3).
+        hi = n - k
+        if hi - _LAG < 12:
             continue
-        r = float(np.corrcoef(a, b)[0, 1])          # lag-k autocorrelation
-        resid = b - r * a                            # back-tested errors
+        level = x[_LAG:hi]
+        tend = x[_LAG:hi] - x[:hi - _LAG]
+        y = x[_LAG + k:]
+        m = min(len(level), len(tend), len(y))
+        level, tend, y = level[:m], tend[:m], y[:m]
+        X = np.column_stack([np.ones(m), level, tend])
+        beta, *_ = np.linalg.lstsq(X, y, rcond=None)
+        resid = y - X @ beta
         sd = float(np.std(resid, ddof=1))
-        fc = r * last_val                            # damped-persistence forecast
+        fc = float(beta[0] + beta[1] * last_val + beta[2] * tend_now)
+        fc = float(np.clip(fc, -3.0, 3.0))
         p_el = float(stats.norm.sf((ONI_ELNINO - fc) / sd)) if sd > 0 else float(fc >= ONI_ELNINO)
         p_la = float(stats.norm.cdf((ONI_LANINA - fc) / sd)) if sd > 0 else float(fc <= ONI_LANINA)
         p_neu = max(0.0, 1.0 - p_el - p_la)
