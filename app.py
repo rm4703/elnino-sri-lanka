@@ -229,20 +229,33 @@ with st.status("Building 25-district satellite analysis…", expanded=False) as 
 panel, composite, lag_df = D["panel"], D["comp"], D["lag"]
 imp, summary = D["imp"], D["summary"]
 
+_watch = cpc_outlook.get("status") if cpc_outlook.get("available") else ""
+_phase_note = ((_watch or "El Niño developing")
+               if status.developing_elnino and status.phase != "El Nino" else None)
+
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Current ONI", f"{status.latest_oni:+.2f} °C", help="Oceanic Niño Index anomaly")
 c2.metric("Trend", f"{status.trend_per_season:+.2f} /season",
           delta="warming" if status.trend_per_season > 0 else "cooling")
-c3.metric("Phase", PRETTY[status.phase])
+c3.metric("Phase (now)", PRETTY[status.phase], delta=_phase_note, delta_color="off",
+          help="The current *observed* state from the ONI. 'Neutral' means the ONI "
+               "sits between −0.5 and +0.5 °C — even while an El Niño is developing.")
 c4.metric("National impact", f"{summary['overall']:.0f}/100",
           help="Mean adverse-risk score across 25 districts & 4 sectors")
+
+if _phase_note:
+    st.caption(f"ℹ️ Conditions are **ENSO-neutral right now** (ONI "
+               f"{status.latest_oni:+.2f} °C, just below the +0.5 °C threshold), but an "
+               f"**El Niño is developing** — consistent with NOAA's *{_watch or 'El Niño Watch'}*. "
+               "‘Phase’ = where we are today; the hero banner and forecast show where it's headed.")
 
 # --------------------------------------------------------------------------- #
 # Sidebar
 # --------------------------------------------------------------------------- #
 with st.sidebar:
     st.markdown("### 🌊 Control panel")
-    st.metric("ENSO phase", PRETTY[status.phase], help=status.headline)
+    st.metric("ENSO phase (now)", PRETTY[status.phase], delta=_phase_note,
+              delta_color="off", help=status.headline)
     st.metric("Latest ONI", f"{status.latest_oni:+.2f} °C",
               f"{status.trend_per_season:+.2f}/season")
     in_drought = int((D["spi_cur"]["SPI6"] < -1.0).sum())
