@@ -266,6 +266,36 @@ with st.sidebar:
         st.rerun()
     st.caption("Analytical aid — not an official forecast.")
 
+PAGE_INTRO = {
+    "ENSO Status": "Is an El Niño forming in the Pacific, and what is the outlook for the next few seasons?",
+    "ENSO Events": "How past El Niño events actually changed Sri Lanka's rainfall, season by season.",
+    "Ocean Drivers": "Two oceans steer Sri Lanka's October–November rains — here's which one really matters.",
+    "Spatial Impact": "A map of where a developing El Niño is likely to hit Sri Lanka hardest.",
+    "Districts": "The same El Niño analysis, district by district, from satellite rainfall.",
+    "Region Details": "Pick a district and see exactly how El Niño shifts its rainfall.",
+    "Sector Impacts": "El Niño risk scores for drought, floods, farming and hydropower in all 25 districts.",
+    "Methods": "Exactly how every number on this dashboard is calculated — and its limits.",
+}
+
+GLOSSARY = """
+- **ENSO** — the El Niño–Southern Oscillation, the Pacific Ocean's natural warm/cool
+  swing that nudges weather worldwide. **El Niño** = warm phase, **La Niña** = cool phase.
+- **ONI (Oceanic Niño Index)** — the thermometer for ENSO: how much warmer/cooler than
+  normal the tropical Pacific is (°C). **+0.5 °C or more = El Niño; −0.5 or below = La Niña.**
+- **IOD / DMI** — the Indian Ocean Dipole, a similar east–west see-saw in the Indian Ocean
+  (measured by the Dipole Mode Index). A *positive* IOD tends to bring Sri Lanka extra Oct–Nov rain.
+- **Anomaly** — the difference from the long-term normal (e.g. rainfall 30 % above average).
+- **Composite** — the *average* picture across many El Niño years, i.e. "what usually happens".
+- **Significant / p-value / q-value** — how likely a result is just chance. Smaller = more
+  trustworthy. **q** is the p-value after correcting for running many tests at once.
+- **CHIRPS** — satellite-plus-rain-gauge rainfall data (~5 km, since 1981).
+- **MODIS NDVI / VCI** — satellite "greenness" of vegetation; VCI < 35 signals plant stress.
+- **SPI** — a standard drought index: how unusually wet/dry the last few months were
+  (below −1 = drought).
+- **Sri Lanka's seasons** — *First inter-monsoon* (Mar–Apr), *South-West monsoon / Yala*
+  (May–Sep), *Second inter-monsoon* (Oct–Nov), *North-East monsoon / Maha* (Dec–Feb).
+"""
+
 PAGES = ["ENSO Status", "ENSO Events", "Ocean Drivers", "Spatial Impact",
          "Districts", "Region Details", "Sector Impacts", "Methods"]
 page = option_menu(
@@ -285,6 +315,16 @@ page = option_menu(
 )
 # Test/deep-link hook: honour an explicit page override if one is set.
 page = st.session_state.get("nav_override", page)
+
+# Plain-English orientation shown on every page.
+if PAGE_INTRO.get(page):
+    st.markdown(
+        f"<div style='background:#ecfeff;border-left:4px solid #06b6d4;"
+        f"padding:9px 14px;border-radius:8px;margin-bottom:6px;font-size:.95rem;'>"
+        f"💡 <b>In plain terms:</b> {PAGE_INTRO[page]}</div>",
+        unsafe_allow_html=True)
+with st.expander("📖 New here? Plain-English glossary of the terms used on this dashboard"):
+    st.markdown(GLOSSARY)
 
 
 # --------------------------------------------------------------------------- #
@@ -352,13 +392,13 @@ if page == "ENSO Status":
         st.plotly_chart(figp, use_container_width=True)
 
     st.info(
-        f"**Interpretation.** {status.headline}\n\n"
-        "The ONI is the 3-month running sea-surface-temperature anomaly in the "
-        "Niño-3.4 region; values at or above **+0.5 °C** define El Niño. In the "
-        "CHIRPS satellite record for Sri Lanka, El Niño is most strongly associated "
-        "with a **sharp reduction in first inter-monsoon (March–April) rainfall** "
-        "and **wetter second-inter-monsoon (October–November) conditions**, raising "
-        "flood and landslide risk; the south-west-monsoon signal is weak."
+        f"**What this means.** {status.headline}\n\n"
+        "The ONI measures how much warmer or cooler than normal the tropical Pacific "
+        "is; **+0.5 °C or above signals El Niño**. For Sri Lanka, the CHIRPS satellite "
+        "record shows El Niño brings **wetter October–November (second inter-monsoon) "
+        "rains** — raising flood and landslide risk — and a **drier March–April "
+        "(first inter-monsoon)**, which shows up most clearly in the year *after* the "
+        "event peaks. The south-west-monsoon effect is comparatively weak."
     )
     st.caption("⚠️ The forecast is a **statistical persistence-plus-tendency model** "
                "computed live from the latest ONI — it uses the current level *and* "
@@ -390,11 +430,12 @@ if page == "ENSO Events":
     dev["err_low"] = dev["mean_pct"] - dev["ci_low"]
     dev["err_high"] = dev["ci_high"] - dev["mean_pct"]
     dev["sig"] = dev["p"].apply(lambda p: "significant (p<0.05)" if p < 0.05
-                                else "suggestive (p<0.10)" if p < 0.10 else "n.s.")
+                                else "suggestive (p<0.10)" if p < 0.10 else "not significant")
     figd = px.bar(dev, x="mean_pct", y="rel_season", orientation="h",
                   color="sig", height=360,
                   color_discrete_map={"significant (p<0.05)": "#0ea5e9",
-                                      "suggestive (p<0.10)": "#f59e0b", "n.s.": "#cbd5e1"},
+                                      "suggestive (p<0.10)": "#f59e0b",
+                                      "not significant": "#cbd5e1"},
                   labels=dict(mean_pct="national rainfall anomaly (%)", rel_season="",
                               sig="significance"),
                   error_x="err_high", error_x_minus="err_low")
