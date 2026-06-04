@@ -404,6 +404,22 @@ if page == "ENSO Status":
         figp.update_layout(barmode="stack", yaxis_tickformat=".0%")
         st.plotly_chart(figp, use_container_width=True)
 
+    if not fc.empty:
+        peak = fc.loc[fc["oni"].idxmax()]
+        near = fc.iloc[min(2, len(fc) - 1)]
+        off = ""
+        if cpc_outlook.get("available") and cpc_outlook.get("probs"):
+            p0 = cpc_outlook["probs"][0]
+            off = f"; NOAA CPC puts it at **{p0[0]}%** for {p0[1]}"
+        st.success(
+            "📊 **Bottom line.** An **El Niño is developing**. The in-house model "
+            f"expects the ONI to climb to about **{peak['oni']:+.2f} °C around "
+            f"{peak['seas']} {peak['date']:%Y}**, with El Niño the most likely state "
+            f"through late 2026 (e.g. {near['seas']} {near['date']:%Y}: "
+            f"**{near['p_elnino']:.0%}** El Niño{off}). For Sri Lanka that favours a "
+            "**wetter, flood-prone October–November** and a **drier following "
+            "March–April**.")
+
     st.info(
         f"**What this means.** {status.headline}\n\n"
         "The ONI measures how much warmer or cooler than normal the tropical Pacific "
@@ -440,6 +456,25 @@ if page == "ENSO Events":
                "individual months.")
 
     dev = D["dev"].dropna(subset=["mean_pct"]).copy()
+    if len(dev):
+        simrow = dev[dev["season"] == "SIM"]
+        strongest = dev.sort_values("p").iloc[0]
+        bits = []
+        if len(simrow):
+            s = simrow.iloc[0]
+            verdict = ("statistically significant" if s["p"] < 0.05
+                       else "suggestive" if s["p"] < 0.10 else "not significant")
+            bits.append(f"the **October–November (developing-year) rains run "
+                        f"{s['mean_pct']:+.0f}%** ({verdict}, p = {s['p']:.2f})")
+        st.success(
+            "📊 **What the events show.** Averaged over every El Niño since 1981, "
+            + (bits[0] if bits else
+               f"the strongest national signal is {strongest['rel_season']} "
+               f"({strongest['mean_pct']:+.0f}%)")
+            + " — this is the robust, flood-relevant signal. The south-west / "
+            "north-east monsoons and the decay-year March–April drying are weaker. "
+            "Eastern- and Central-Pacific events affect Sri Lanka similarly here.")
+
     dev["err_low"] = dev["mean_pct"] - dev["ci_low"]
     dev["err_high"] = dev["ci_high"] - dev["mean_pct"]
     dev["sig"] = dev["p"].apply(lambda p: "significant (p<0.05)" if p < 0.05
@@ -501,6 +536,28 @@ if page == "Ocean Drivers":
 
     A = D["iod"]
     dmi = D["dmi"]
+
+    def _phase_pct(comp, key, col="phase"):
+        r = comp[comp[col] == key]
+        return float(r["mean_pct"].iloc[0]) if len(r) else float("nan")
+
+    _en = _phase_pct(A["enso_comp"], "El Nino")
+    _ln = _phase_pct(A["enso_comp"], "La Nina")
+    _pi = _phase_pct(A["iod_comp"], "Positive IOD")
+    _pp = A["partial"]
+    if not pd.isna(_en):
+        enso_driver = (not pd.isna(_pp["enso_p"])) and _pp["enso_p"] < 0.05
+        st.success(
+            f"📊 **What the results show.** El Niño makes Oct–Nov **{_en:+.0f}% wetter** "
+            f"and La Niña **{_ln:+.0f}%** (drier) on average. Positive IOD looks even "
+            f"stronger (**{_pi:+.0f}%**) — but ENSO and the IOD move together "
+            f"(r = {_pp['oni_dmi_corr']:+.2f}), so the regression separates them: "
+            + ("**ENSO is the real independent driver** "
+               f"(p = {_pp['enso_p']:.2f}), and the IOD's solo effect is **not** "
+               "statistically significant. Much of the big positive-IOD number is "
+               "actually the ENSO signal in disguise."
+               if enso_driver else
+               "neither driver is independently significant in this short record."))
 
     # DMI timeline
     if len(dmi):
@@ -597,6 +654,15 @@ if page == "Spatial Impact":
                "signals by sector relevance, and have **not** been calibrated "
                "against observed droughts, yields, reservoir levels or floods. "
                "Treat them as indicative, not as measured risk.", icon="⚠️")
+    _fim_sig = int(composite[(composite["season"] == "FIM")
+                             & (composite["significant"])].shape[0])
+    _top = ", ".join(_short(r) for r in summary["top_risk_regions"])
+    st.success(
+        f"📊 **What the map shows.** El Niño's **March–April drying is statistically "
+        f"robust in {_fim_sig} of 25 districts** — the most reliable signal here. "
+        f"Overall adverse exposure is highest in **{_top}** (the wet south-west), "
+        "while the northern dry zone shows the deepest drought (SPI) response. "
+        "Switch the layers to see each sector and season.")
     colA, colB = st.columns([1, 2])
     metric = colA.selectbox(
         "Map layer",
@@ -717,6 +783,17 @@ if page == "Districts":
         d_comp, d_imp, d_cells = D["comp"], D["imp"], D["cells"]
         d_span, d_spi, d_enspi = D["span"], D["spi_cur"], D["en_spi3"]
         d_meta, d_table = D["meta"], D["table"]
+
+        _ndrought = int((d_spi["SPI6"] < -1.0).sum())
+        _driest = _short(d_spi.loc[d_spi["SPI6"].idxmin(), "region"])
+        _fimsig = int(d_comp[(d_comp["season"] == "FIM")
+                             & (d_comp["significant"])].shape[0])
+        st.success(
+            f"📊 **What the satellite data shows.** Right now **{_ndrought} of 25 "
+            f"districts are in drought** (SPI-6 below −1), the driest being "
+            f"**{_driest}**. Looking across history, El Niño's March–April drying is "
+            f"statistically significant in **{_fimsig} of 25** districts. Use the map "
+            "layer selector for sector risk, each season's rainfall, and the SPI maps.")
 
         if d_geojson is not None:
             cc = st.columns([1, 2])
@@ -902,6 +979,21 @@ if page == "Region Details":
         col.metric(name, "n/a" if pd.isna(val) else f"{val:.0f}",
                    help=impacts.risk_label(val))
 
+    _cs = composite[composite["region"] == region].dropna(subset=["precip_pct", "q_value"])
+    _sp = D["spi_cur"].set_index("region")
+    if len(_cs):
+        _best = _cs.loc[_cs["q_value"].idxmin()]
+        _verdict = ("statistically significant" if _best["q_value"] < 0.05
+                    else "suggestive" if _best["q_value"] < 0.10 else "not significant")
+        _spi6 = _sp.loc[region, "SPI6"] if region in _sp.index else float("nan")
+        _spist = _sp.loc[region, "status"] if region in _sp.index else ""
+        st.success(
+            f"📊 **{_short(region)} in brief.** El Niño's clearest effect here is in "
+            f"the **{SEASON_LABELS.get(_best['season'], _best['season'])}**, where "
+            f"rainfall runs **{_best['precip_pct']:+.0f}% vs normal** ({_verdict}). "
+            + (f"Its drought state right now is **SPI-6 {_spi6:+.2f}** ({_spist})."
+               if not pd.isna(_spi6) else ""))
+
     st.markdown("#### Monthly rainfall by ENSO phase")
     pc = analysis.phase_composite_by_month(panel, region)
     months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -949,6 +1041,18 @@ if page == "Sector Impacts":
                "sector relevance. They are **not** calibrated against observed "
                "drought, crop-yield, reservoir or flood records — use them to "
                "compare districts, not as absolute risk.", icon="⚠️")
+
+    s = summary
+    st.success(
+        f"📊 **What the scores say.** In a typical El Niño, **{s['regions_drier']} of "
+        f"{len(imp)} districts trend drier** and {s['regions_wetter']} wetter. The "
+        "highest overall exposure is in **"
+        f"{', '.join(_short(r) for r in s['top_risk_regions'])}**. Averaged across "
+        f"districts, the sector pressure is greatest for **drought ({s['drought']:.0f}) "
+        f"and agriculture ({s['agriculture']:.0f})**, with flood {s['flood']:.0f} and "
+        f"hydropower {s['hydropower']:.0f} (all out of 100). These are indicative "
+        "heuristic scores, not validated risk.")
+
     show = imp[["region", "zone", "direction", "confidence", "drought", "flood",
                 "agriculture", "hydropower", "overall"]].copy()
     show["region"] = show["region"].map(_short)
@@ -966,16 +1070,6 @@ if page == "Sector Impacts":
     st.caption("Risk scores 0–100 (higher = more adverse). *confidence* (0–1) is "
                "the statistical confidence of the district's dominant seasonal "
                "signal — low values mean the estimate is weakly constrained.")
-
-    s = summary
-    st.markdown(
-        f"**National read-out.** During a typical El Niño, "
-        f"{s['regions_drier']} of {len(imp)} districts trend **drier** and "
-        f"{s['regions_wetter']} trend **wetter**. Mean sector risk — "
-        f"drought {s['drought']:.0f}, flood {s['flood']:.0f}, "
-        f"agriculture {s['agriculture']:.0f}, hydropower {s['hydropower']:.0f} (/100). "
-        f"Highest overall exposure: **{', '.join(_short(r) for r in s['top_risk_regions'])}**."
-    )
 
     long = imp.copy()
     long["name"] = long["region"].map(_short)
