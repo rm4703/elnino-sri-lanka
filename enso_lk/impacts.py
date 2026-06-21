@@ -68,7 +68,7 @@ def _wmean(eff: dict[str, float], weights: dict[str, float]) -> float:
     return num / den if den else float("nan")
 
 
-def region_impacts(composite: pd.DataFrame, meta: dict | None = None) -> pd.DataFrame:
+def region_impacts(composite: pd.DataFrame, current_spi: pd.DataFrame | None = None, meta: dict | None = None) -> pd.DataFrame:
     """One row per region with significance-aware sector risk scores.
 
     ``meta`` maps region name -> dict(lat, lon, zone, district, relevance, note).
@@ -137,6 +137,21 @@ def region_impacts(composite: pd.DataFrame, meta: dict | None = None) -> pd.Data
             inflow = _wmean({"FIM": eff["FIM"], "SWM": eff["SWM"], "SIM": eff["SIM"]},
                             {"FIM": 0.25, "SWM": 0.45, "SIM": 0.30})
             hydro = _mag(min(inflow, 0.0)) if not pd.isna(inflow) else np.nan
+
+        # --- Dynamic Vulnerability Multiplier based on real-time ground state ---
+        if current_spi is not None and "region" in current_spi.columns:
+            spi_df = current_spi.set_index("region")
+            if region in spi_df.index:
+                spi6 = float(spi_df.loc[region, "SPI6"])
+                if not pd.isna(spi6) and spi6 < 0:
+                    # Ground is already dry. Amplify risk (max +30% per standard deviation of drought)
+                    multiplier = 1.0 + (abs(spi6) * 0.3)
+                    drought = min(100.0, drought * multiplier)
+                    agri = min(100.0, agri * multiplier)
+                elif not pd.isna(spi6) and spi6 > 1.0:
+                    # Ground is saturated. Amplify flood risk.
+                    flood_mult = 1.0 + (abs(spi6) * 0.2)
+                    flood = min(100.0, flood * flood_mult)
 
         # --- Direction & overall --------------------------------------------
         supply_z = _wmean(eff, dir_w)   # signed net seasonal effect

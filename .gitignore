@@ -10,6 +10,8 @@ __pycache__/
 !.cache/nino_*.json
 !.cache/dmi_*.json
 !.cache/cpc_*.json
+!.cache/soi_*.json
+!.cache/nino34_*.json
 
 .venv/
 venv/

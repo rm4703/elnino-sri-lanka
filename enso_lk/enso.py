@@ -144,3 +144,71 @@ def elnino_event_years(df: pd.DataFrame) -> list[int]:
     d["phase"] = d["oni"].apply(classify)
     counts = d[d["phase"] == "El Nino"].groupby("year").size()
     return sorted(counts[counts >= 3].index.tolist())
+
+
+def fetch_soi(max_age_hours: float = 24.0) -> pd.DataFrame:
+    """Fetch the Southern Oscillation Index (SOI) from NOAA CPC."""
+    url = "https://www.cpc.ncep.noaa.gov/data/indices/soi"
+    cached = cache.get("soi", {"url": url}, max_age_hours)
+    if cached is not None:
+        text = cached["text"]
+    else:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        text = resp.text
+        cache.put("soi", {"url": url}, {"text": text})
+
+    rows = []
+    # Skip header until YEAR is found
+    lines = text.splitlines()
+    start_idx = 0
+    for i, line in enumerate(lines):
+        if line.startswith("YEAR"):
+            start_idx = i + 1
+            break
+            
+    for line in lines[start_idx:]:
+        parts = line.split()
+        if len(parts) < 2 or not parts[0].isdigit():
+            continue
+        year = int(parts[0])
+        for m, val_str in enumerate(parts[1:], start=1):
+            try:
+                val = float(val_str)
+                if val <= -99.9: continue # Missing value
+                rows.append({
+                    "date": pd.Timestamp(year=year, month=m, day=1),
+                    "soi": val
+                })
+            except ValueError:
+                continue
+    return pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
+
+
+def fetch_nino34(max_age_hours: float = 24.0) -> pd.DataFrame:
+    """Fetch raw monthly Nino 3.4 SST anomalies from NOAA CPC."""
+    url = "https://www.cpc.ncep.noaa.gov/data/indices/sstoi.indices"
+    cached = cache.get("nino34", {"url": url}, max_age_hours)
+    if cached is not None:
+        text = cached["text"]
+    else:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        text = resp.text
+        cache.put("nino34", {"url": url}, {"text": text})
+
+    rows = []
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) >= 10 and parts[0].isdigit():
+            # YR MON NINO1+2 ANOM NINO3 ANOM NINO4 ANOM NINO3.4 ANOM
+            try:
+                yr, mon = int(parts[0]), int(parts[1])
+                nino34_anom = float(parts[9])
+                rows.append({
+                    "date": pd.Timestamp(year=yr, month=mon, day=1),
+                    "nino34": nino34_anom
+                })
+            except ValueError:
+                continue
+    return pd.DataFrame(rows).sort_values("date").reset_index(drop=True)

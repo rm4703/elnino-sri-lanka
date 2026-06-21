@@ -16,13 +16,15 @@ from streamlit_option_menu import option_menu
 # Consistent modern Plotly look across every figure.
 pio.templates["enso"] = go.layout.Template(
     layout=dict(
-        font=dict(family="Inter, sans-serif", color="#0f172a", size=13),
+        font=dict(family="Inter, sans-serif", color="#334155", size=13),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        colorway=["#0ea5e9", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6", "#14b8a6"],
-        xaxis=dict(gridcolor="#eef2f7", zerolinecolor="#e2e8f0"),
-        yaxis=dict(gridcolor="#eef2f7", zerolinecolor="#e2e8f0"),
+        colorway=["#0284c7", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6", "#14b8a6"],
+        xaxis=dict(gridcolor="rgba(226, 232, 240, 0.4)", zerolinecolor="rgba(203, 213, 225, 0.5)"),
+        yaxis=dict(gridcolor="rgba(226, 232, 240, 0.4)", zerolinecolor="rgba(203, 213, 225, 0.5)"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
         margin=dict(t=30, r=10, l=10, b=10),
+        hoverlabel=dict(bgcolor="rgba(15, 23, 42, 0.9)", font_size=13, font_family="Outfit, sans-serif", font_color="#ffffff", bordercolor="rgba(255,255,255,0.1)"),
+        transition=dict(duration=500, easing="cubic-in-out"),
     )
 )
 pio.templates.default = "plotly_white+enso"
@@ -31,17 +33,16 @@ from enso_lk import (analysis, districts, enso, events, forecast, impacts, iod,
                      official, report, spi, vegetation, weather)
 from enso_lk.config import ONI_ELNINO, ONI_LANINA, SEASON_LABELS, SEASONS
 
-st.set_page_config(page_title="El Niño · Sri Lanka", layout="wide", page_icon="🌊",
-                   initial_sidebar_state="expanded")
+st.set_page_config(page_title="El Niño · Sri Lanka", layout="wide", initial_sidebar_state="expanded")
 
-PHASE_COLORS = {"El Nino": "#ef4444", "La Nina": "#3b82f6", "Neutral": "#94a3b8"}
+PHASE_COLORS = {"El Nino": "#f43f5e", "La Nina": "#0284c7", "Neutral": "#94a3b8"}
 RISK_SCALE = [(0, "#2ca02c"), (0.35, "#fee08b"), (0.6, "#fc8d59"), (1.0, "#d73027")]
 
 # Phase -> (accent colour, soft background, emoji) for the hero/status styling.
 PHASE_THEME = {
-    "El Nino":  ("#dc2626", "#fef2f2", "🔴"),
-    "La Nina":  ("#2563eb", "#eff6ff", "🔵"),
-    "Neutral":  ("#d97706", "#fffbeb", "🟡"),
+    "El Nino":  ("#dc2626", "#fef2f2", ""),
+    "La Nina":  ("#2563eb", "#eff6ff", ""),
+    "Neutral":  ("#d97706", "#fffbeb", ""),
 }
 # Pretty (accented) display names; the internal keys stay ASCII for lookups.
 PRETTY = {"El Nino": "El Niño", "La Nina": "La Niña", "Neutral": "Neutral"}
@@ -49,82 +50,171 @@ PRETTY = {"El Nino": "El Niño", "La Nina": "La Niña", "Neutral": "Neutral"}
 # --- Modern, responsive dashboard styling --------------------------------- #
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap');
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+h1, h2, h3 { font-family: 'Outfit', sans-serif; letter-spacing: -0.02em; }
 .block-container { padding-top: 1.4rem; padding-bottom: 4.5rem; max-width: 1400px; }
-#MainMenu, [data-testid="stDecoration"] { visibility: hidden; }
-footer { visibility: hidden; }
-/* Hide the Streamlit "Deploy" button + toolbar actions */
-[data-testid="stAppDeployButton"], [data-testid="stDeployButton"] { display: none !important; }
-[data-testid="stToolbarActions"] { display: none !important; }
+#MainMenu, [data-testid="stDecoration"], footer { visibility: hidden; }
+[data-testid="stAppDeployButton"], [data-testid="stDeployButton"], [data-testid="stToolbarActions"] { display: none !important; }
 
-/* Metric cards */
+/* Premium Glassmorphic Metric Cards */
 [data-testid="stMetric"] {
-    background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px;
-    padding: 14px 18px; box-shadow: 0 1px 3px rgba(15,23,42,.06);
-    transition: box-shadow .2s ease, transform .2s ease;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    border-radius: 18px;
+    padding: 18px 22px; 
+    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-[data-testid="stMetric"]:hover { box-shadow: 0 6px 18px rgba(15,23,42,.10); transform: translateY(-1px); }
-[data-testid="stMetricLabel"] p { font-size: .78rem; color: #64748b; font-weight: 600;
-    text-transform: uppercase; letter-spacing: .04em; }
-[data-testid="stMetricValue"] { font-size: 1.55rem; font-weight: 700; color: #0f172a; }
+[data-testid="stMetric"]:hover { 
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08); 
+    transform: translateY(-4px); 
+    background: rgba(255, 255, 255, 0.95);
+    border-color: #e2e8f0;
+}
+[data-testid="stMetricLabel"] p { 
+    font-size: 0.8rem; color: #64748b; font-weight: 600; 
+    text-transform: uppercase; letter-spacing: 0.05em; 
+}
+[data-testid="stMetricValue"] { 
+    font-size: 1.8rem; font-weight: 800; color: #0f172a; 
+    font-family: 'Outfit', sans-serif; 
+}
 
-/* Tabs (scroll horizontally instead of wrapping on small screens) */
+/* Styled Tabs */
 [data-testid="stTabs"] [data-baseweb="tab-list"] {
-    gap: 6px; border-bottom: none; overflow-x: auto; flex-wrap: nowrap;
-    scrollbar-width: thin;
+    gap: 8px; border-bottom: none; overflow-x: auto; flex-wrap: nowrap;
+    scrollbar-width: none; padding: 4px 4px 10px 4px;
 }
 [data-testid="stTabs"] [data-baseweb="tab"] {
-    background:#f1f5f9; border-radius: 10px 10px 0 0; padding: 8px 16px;
-    font-weight: 600; font-size:.9rem; color:#475569; white-space: nowrap;
+    background: #ffffff; border-radius: 12px; padding: 10px 22px;
+    font-weight: 600; font-size: 0.95rem; color: #64748b; white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid #f1f5f9;
 }
-[data-testid="stTabs"] [aria-selected="true"] { background:#0ea5e9; color:#fff; }
+[data-testid="stTabs"] [data-baseweb="tab"]:hover {
+    color: #0ea5e9; transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(14, 165, 233, 0.1);
+    border-color: #bae6fd;
+}
+[data-testid="stTabs"] [aria-selected="true"] { 
+    background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%); 
+    color: #ffffff !important; 
+    border: 1px solid rgba(255,255,255,0.2);
+    box-shadow: 0 6px 18px rgba(14, 165, 233, 0.35);
+}
 
-/* Headings & misc */
-h1,h2,h3 { letter-spacing:-.01em; }
-h3 { font-weight:700; }
-[data-testid="stDataFrame"] { border-radius: 12px; overflow:hidden; border:1px solid #e2e8f0; }
-section[data-testid="stSidebar"] { background:#0f172a; }
-section[data-testid="stSidebar"] * { color:#e2e8f0; }
-section[data-testid="stSidebar"] [data-testid="stMetric"] { background:#1e293b; border-color:#334155; }
-section[data-testid="stSidebar"] [data-testid="stMetricValue"] { color:#f8fafc; }
-.stDownloadButton button, .stButton button { border-radius:10px; font-weight:600; }
+/* Dynamic Hero Header */
+@keyframes gradientShift { 
+    0% { background-position: 0% 50%; } 
+    50% { background-position: 100% 50%; } 
+    100% { background-position: 0% 50%; } 
+}
+.enso-hero { 
+    background: linear-gradient(120deg, #0f172a, #1e3a8a, #0284c7, #0f172a);
+    background-size: 200% 200%;
+    animation: gradientShift 15s ease infinite;
+    border-radius: 22px; 
+    padding: 36px 40px; 
+    margin-bottom: 24px; 
+    color: #ffffff;
+    box-shadow: 0 15px 40px rgba(15, 23, 42, 0.25);
+    position: relative;
+    overflow: hidden;
+}
+.enso-hero::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(circle at top right, rgba(255,255,255,0.15), transparent 50%);
+    pointer-events: none;
+}
+.enso-hero-row { 
+    display: flex; justify-content: space-between; align-items: center; 
+    flex-wrap: wrap; gap: 20px; position: relative; z-index: 1;
+}
+.enso-hero-title { 
+    font-size: 2.3rem; font-weight: 800; font-family: 'Outfit', sans-serif;
+    letter-spacing: -0.03em; line-height: 1.15; margin-bottom: 8px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+.enso-hero-sub { opacity: 0.9; font-size: 1.1rem; font-weight: 400; max-width: 650px;}
 
-/* Hero */
-.enso-hero { background:linear-gradient(120deg,#0c4a6e 0%,#0e7490 55%,#0891b2 100%);
-    border-radius:18px; padding:24px 28px; margin-bottom:16px; color:#fff;
-    box-shadow:0 8px 28px rgba(8,74,110,.28); }
-.enso-hero-row { display:flex; justify-content:space-between; align-items:center;
-    flex-wrap:wrap; gap:12px; }
-.enso-hero-title { font-size:1.65rem; font-weight:800; letter-spacing:-.02em; line-height:1.15; }
-.enso-hero-sub { opacity:.85; font-size:.9rem; margin-top:3px; }
-.enso-pill { padding:8px 18px; border-radius:999px; font-weight:700; font-size:.92rem;
-    white-space:nowrap; box-shadow:0 2px 8px rgba(0,0,0,.2); }
-.enso-headline { margin-top:14px; font-size:1.0rem; font-weight:500;
-    background:rgba(255,255,255,.12); padding:10px 16px; border-radius:12px; }
+/* Pulsing Status Pill */
+@keyframes pulseGlow {
+    0% { box-shadow: 0 0 0 0 rgba(255,255,255,0.5); }
+    70% { box-shadow: 0 0 0 12px rgba(255,255,255,0); }
+    100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); }
+}
+.enso-pill { 
+    padding: 10px 24px; border-radius: 999px; font-weight: 800; font-size: 1rem;
+    white-space: nowrap; box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+    animation: pulseGlow 2.5s infinite;
+    border: 1px solid rgba(255,255,255,0.3);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    letter-spacing: 0.03em;
+}
+.enso-headline { 
+    margin-top: 24px; font-size: 1.15rem; font-weight: 500;
+    background: rgba(255,255,255,0.08); padding: 16px 24px; border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.15); backdrop-filter: blur(10px);
+    position: relative; z-index: 1; line-height: 1.5;
+}
+
+/* Sidebar Styling */
+section[data-testid="stSidebar"] { 
+    background: linear-gradient(180deg, #0f172a 0%, #020617 100%); 
+    border-right: 1px solid rgba(255,255,255,0.05);
+}
+section[data-testid="stSidebar"] * { color: #f8fafc; }
+section[data-testid="stSidebar"] [data-testid="stMetric"] { 
+    background: rgba(255,255,255,0.04); 
+    border-color: rgba(255,255,255,0.08); 
+    backdrop-filter: blur(12px);
+}
+section[data-testid="stSidebar"] [data-testid="stMetric"]:hover { 
+    background: rgba(255,255,255,0.08); 
+    border-color: rgba(255,255,255,0.15);
+}
+section[data-testid="stSidebar"] [data-testid="stMetricValue"] { color: #fff; }
+section[data-testid="stSidebar"] p { color: #94a3b8; }
+.stDownloadButton button, .stButton button { 
+    border-radius: 12px; font-weight: 600; font-family: 'Inter', sans-serif;
+    transition: all 0.2s ease;
+}
+.stButton button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
 
 /* Fixed footer */
-.enso-footer { position:fixed; left:0; bottom:0; width:100%; z-index:1000;
-    background:rgba(15,23,42,.97); backdrop-filter:blur(8px); color:#cbd5e1;
-    border-top:1px solid #1e293b; padding:8px 20px; font-size:.8rem;
-    display:flex; justify-content:center; align-items:center; gap:10px; text-align:center; }
-.enso-footer a { color:#38bdf8; font-weight:700; text-decoration:none; }
-.enso-footer .muted { color:#64748b; }
-
-/* ---- Mobile / responsive ---- */
-@media (max-width: 680px) {
-    .block-container { padding-left:.7rem; padding-right:.7rem; padding-bottom:5rem; }
-    .enso-hero { padding:18px 18px; border-radius:14px; }
-    .enso-hero-title { font-size:1.2rem; }
-    .enso-hero-sub { font-size:.8rem; }
-    .enso-headline { font-size:.88rem; }
-    .enso-pill { font-size:.8rem; padding:6px 14px; }
-    [data-testid="stMetricValue"] { font-size:1.2rem; }
-    [data-testid="stMetricLabel"] p { font-size:.66rem; }
-    [data-testid="stTabs"] [data-baseweb="tab"] { padding:6px 11px; font-size:.78rem; }
-    .enso-footer { font-size:.7rem; padding:7px 12px; }
-    .enso-footer .hide-sm { display:none; }
+.enso-footer { 
+    position:fixed; left:0; bottom:0; width:100%; z-index:1000;
+    background: rgba(15,23,42,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    color: #cbd5e1; border-top: 1px solid rgba(255,255,255,0.05); 
+    padding: 10px 20px; font-size: 0.85rem; font-weight: 500;
+    display:flex; justify-content:center; align-items:center; gap:12px; text-align:center; 
 }
+.enso-footer a { color: #38bdf8; font-weight: 700; text-decoration: none; transition: color 0.2s; }
+.enso-footer a:hover { color: #7dd3fc; }
+.enso-footer .muted { color: #64748b; }
+
+/* Responsive adjustments */
+@media (max-width: 680px) {
+    .block-container { padding-left: 0.8rem; padding-right: 0.8rem; padding-bottom: 5.5rem; }
+    .enso-hero { padding: 24px 20px; border-radius: 18px; }
+    .enso-hero-title { font-size: 1.6rem; }
+    .enso-hero-sub { font-size: 0.95rem; }
+    .enso-headline { font-size: 0.95rem; padding: 14px 18px; }
+    .enso-pill { font-size: 0.85rem; padding: 8px 16px; }
+    [data-testid="stMetricValue"] { font-size: 1.4rem; }
+    [data-testid="stTabs"] [data-baseweb="tab"] { padding: 8px 14px; font-size: 0.85rem; }
+    .enso-footer { font-size: 0.75rem; padding: 8px 12px; }
+    .enso-footer .hide-sm { display: none; }
+}
+/* Elegant Scrollbars */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.4); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.8); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -135,7 +225,9 @@ section[data-testid="stSidebar"] [data-testid="stMetricValue"] { color:#f8fafc; 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
 def load_enso():
     oni = enso.fetch_oni()
-    return oni, enso.assess_status(oni), official.fetch_cpc_outlook()
+    soi = enso.fetch_soi()
+    nino34 = enso.fetch_nino34()
+    return oni, enso.assess_status(oni), official.fetch_cpc_outlook(), soi, nino34
 
 
 @st.cache_data(ttl=24 * 3600, show_spinner=False)
@@ -146,9 +238,9 @@ def load_core():
     panel = analysis.build_panel(dm.drop(columns=["n_cells"]), onim)
     comp = analysis.elnino_composite(panel)
     lag = analysis.lag_analysis(panel)
-    imp = impacts.region_impacts(comp, meta=dmeta)
     spil = spi.district_spi(dm[["region", "date", "precip"]])
     spi_cur = spi.current_spi(spil)
+    imp = impacts.region_impacts(comp, current_spi=spi_cur, meta=dmeta)
     en_spi3 = spi.elnino_spi(spil, onim, scale=3)
     table = report.assemble_table(imp, comp, spi_cur)
     # Canonical ENSO event framework (developing year + EP/CP flavour).
@@ -187,7 +279,10 @@ def _short(name: str) -> str:
 
 
 try:
-    oni_df, status, cpc_outlook = load_enso()
+    oni_df, status, cpc_outlook, soi_df, nino34_df = load_enso()
+    if "data_loaded" not in st.session_state:
+        st.toast("Live NOAA data synchronized.")
+        st.session_state.data_loaded = True
 except Exception as exc:  # noqa: BLE001
     st.error(f"Failed to load ENSO data (NOAA): {exc}")
     st.stop()
@@ -203,7 +298,7 @@ st.markdown(f"""
 <div class="enso-hero">
   <div class="enso-hero-row">
     <div>
-      <div class="enso-hero-title">🌊 El Niño × Sri Lanka · Impact Intelligence</div>
+      <div class="enso-hero-title">El Niño × Sri Lanka · Impact Intelligence</div>
       <div class="enso-hero-sub">Live ENSO monitoring · CHIRPS &amp; MODIS satellite
          analysis · 25-district risk</div>
     </div>
@@ -233,18 +328,23 @@ _watch = cpc_outlook.get("status") if cpc_outlook.get("available") else ""
 _phase_note = ((_watch or "El Niño developing")
                if status.developing_elnino and status.phase != "El Nino" else None)
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Current ONI", f"{status.latest_oni:+.2f} °C", help="Oceanic Niño Index anomaly")
-c2.metric("Trend", f"{status.trend_per_season:+.2f} /season",
+if not soi_df.empty:
+    latest_soi = soi_df.iloc[-1]
+    c2.metric("Latest SOI", f"{latest_soi['soi']:+.1f}", help=f"Southern Oscillation Index (Atmospheric ENSO) for {latest_soi['date']:%b %Y}. Negative strongly supports El Niño.")
+else:
+    c2.metric("Latest SOI", "N/A", help="Southern Oscillation Index (Atmospheric ENSO)")
+c3.metric("Trend", f"{status.trend_per_season:+.2f} /season",
           delta="warming" if status.trend_per_season > 0 else "cooling")
-c3.metric("Phase (now)", PRETTY[status.phase], delta=_phase_note, delta_color="off",
+c4.metric("Phase (now)", PRETTY[status.phase], delta=_phase_note, delta_color="off",
           help="The current *observed* state from the ONI. 'Neutral' means the ONI "
                "sits between −0.5 and +0.5 °C, even while an El Niño is developing.")
-c4.metric("National impact", f"{summary['overall']:.0f}/100",
+c5.metric("National impact", f"{summary['overall']:.0f}/100",
           help="Mean adverse-risk score across 25 districts & 4 sectors")
 
 if _phase_note:
-    st.caption(f"ℹ️ Conditions are **ENSO-neutral right now** (ONI "
+    st.caption(f"Conditions are **ENSO-neutral right now** (ONI "
                f"{status.latest_oni:+.2f} °C, just below the +0.5 °C threshold), but an "
                f"**El Niño is developing**, consistent with NOAA's *{_watch or 'El Niño Watch'}*. "
                "‘Phase’ = where we are today; the hero banner and forecast show where it's headed.")
@@ -253,7 +353,7 @@ if _phase_note:
 # Sidebar
 # --------------------------------------------------------------------------- #
 with st.sidebar:
-    st.markdown("### 🌊 Control panel")
+    st.markdown("### Control panel")
     st.metric("ENSO phase (now)", PRETTY[status.phase], delta=_phase_note,
               delta_color="off", help=status.headline)
     st.metric("Latest ONI", f"{status.latest_oni:+.2f} °C",
@@ -264,7 +364,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("**Top exposure**")
     for r in summary["top_risk_regions"]:
-        st.markdown(f"&nbsp;&nbsp;🔸 {_short(r)}")
+        st.markdown(f"&nbsp;&nbsp;- {_short(r)}")
     st.markdown("---")
     _dmi_end = D["dmi"]["date"].max() if len(D["dmi"]) else None
     st.caption(f"**Live data** · ONI {status.latest_date:%b %Y} · "
@@ -274,7 +374,7 @@ with st.sidebar:
                "no values are pre-baked.")
     st.caption("Sources: NOAA CPC (ONI/Niño) · NOAA PSL (DMI) · UCSB CHIRPS · "
                "NASA MODIS · geoBoundaries")
-    if st.button("🔄 Refresh live data", use_container_width=True):
+    if st.button("Refresh live data", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
     st.caption("Analytical aid, not an official forecast.")
@@ -334,10 +434,14 @@ if PAGE_INTRO.get(page):
     st.markdown(
         f"<div style='background:#ecfeff;border-left:4px solid #06b6d4;"
         f"padding:9px 14px;border-radius:8px;margin-bottom:6px;font-size:.95rem;'>"
-        f"💡 <b>In plain terms:</b> {PAGE_INTRO[page]}</div>",
+        f"<b>In plain terms:</b> {PAGE_INTRO[page]}</div>",
         unsafe_allow_html=True)
-with st.expander("📖 New here? Plain-English glossary of the terms used on this dashboard"):
-    st.markdown(GLOSSARY)
+if hasattr(st, "popover"):
+    with st.popover("Glossary & Terms"):
+        st.markdown(GLOSSARY)
+else:
+    with st.expander("Glossary & Terms"):
+        st.markdown(GLOSSARY)
 
 
 # --------------------------------------------------------------------------- #
@@ -350,13 +454,20 @@ if page == "ENSO Status":
     h = oni_df[oni_df["date"] >= cut]
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=h["date"], y=h["oni"], mode="lines", name="ONI",
-                             line=dict(color="#222", width=2)))
-    fig.add_hrect(y0=ONI_ELNINO, y1=4, fillcolor="#d62728", opacity=0.08, line_width=0)
-    fig.add_hrect(y0=-4, y1=ONI_LANINA, fillcolor="#1f77b4", opacity=0.08, line_width=0)
-    fig.add_hline(y=ONI_ELNINO, line_dash="dot", line_color="#d62728",
+    
+    # Raw monthly Nino3.4 underneath
+    n34 = nino34_df[nino34_df["date"] >= cut]
+    fig.add_trace(go.Scatter(x=n34["date"], y=n34["nino34"], mode="lines", name="Monthly Niño 3.4 (Raw)",
+                             line=dict(color="#94a3b8", width=1.5), opacity=0.7))
+                             
+    # Smoothed ONI on top
+    fig.add_trace(go.Scatter(x=h["date"], y=h["oni"], mode="lines", name="ONI (3-mo smooth)",
+                             line=dict(color="#0f172a", width=3)))
+    fig.add_hrect(y0=ONI_ELNINO, y1=4, fillcolor="#f43f5e", opacity=0.08, line_width=0)
+    fig.add_hrect(y0=-4, y1=ONI_LANINA, fillcolor="#0284c7", opacity=0.08, line_width=0)
+    fig.add_hline(y=ONI_ELNINO, line_dash="dot", line_color="#f43f5e",
                   annotation_text="El Niño +0.5 °C")
-    fig.add_hline(y=ONI_LANINA, line_dash="dot", line_color="#1f77b4",
+    fig.add_hline(y=ONI_LANINA, line_dash="dot", line_color="#0284c7",
                   annotation_text="La Niña −0.5 °C")
     # Real-time statistical forecast (month-conditioned persistence + tendency).
     fc = forecast.enso_forecast(enso.monthly_oni(oni_df))
@@ -373,7 +484,7 @@ if page == "ENSO Status":
                                  mode="lines+markers", name="statistical forecast",
                                  line=dict(color="#d62728", dash="dash")))
     fig.update_layout(height=420, yaxis_title="ONI anomaly (°C)", margin=dict(t=10))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # Official CPC outlook (dynamical-model consensus) for comparison.
     if cpc_outlook.get("available"):
@@ -381,8 +492,7 @@ if page == "ENSO Status":
         st.success(
             f"**Official outlook, NOAA CPC{(' (' + cpc_outlook['status'] + ')') if cpc_outlook.get('status') else ''}.** "
             + (cpc_outlook.get("synopsis") or "")
-            + (f"\n\nHeadline probabilities: {prob_txt}." if prob_txt else ""),
-            icon="🛰️")
+            + (f"\n\nHeadline probabilities: {prob_txt}." if prob_txt else ""))
         st.caption("↑ The authoritative multi-model consensus (live from NOAA CPC). "
                    "Compare it with the in-house statistical forecast below, they "
                    "should broadly agree on direction; the statistical model is "
@@ -402,7 +512,7 @@ if page == "ENSO Status":
                                           "La Niña": "#3b82f6"},
                       labels=dict(prob="probability", label="", phase=""))
         figp.update_layout(barmode="stack", yaxis_tickformat=".0%")
-        st.plotly_chart(figp, use_container_width=True)
+        st.plotly_chart(figp, use_container_width=True, config={"displayModeBar": False})
 
     if not fc.empty:
         peak = fc.loc[fc["oni"].idxmax()]
@@ -429,7 +539,7 @@ if page == "ENSO Status":
         "(first inter-monsoon)**, which shows up most clearly in the year *after* the "
         "event peaks. The south-west-monsoon effect is comparatively weak."
     )
-    st.caption("⚠️ The forecast is a **statistical persistence-plus-tendency model** "
+    st.caption("Note: The forecast is a **statistical persistence-plus-tendency model** "
                "computed live from the latest ONI, it uses the current level *and* "
                "its recent momentum, so it captures ENSO *development* (it favours a "
                "growing El Niño while the ONI is rising, broadly tracking the "
@@ -488,7 +598,7 @@ if page == "ENSO Events":
                               sig="significance"),
                   error_x="err_high", error_x_minus="err_low")
     figd.add_vline(x=0, line_color="#475569")
-    st.plotly_chart(figd, use_container_width=True)
+    st.plotly_chart(figd, use_container_width=True, config={"displayModeBar": False})
     st.caption("Bars = mean national rainfall anomaly vs non-event years; whiskers "
                "= bootstrap 95 % CI. The robust signal is a **wetter second "
                "inter-monsoon (Oct–Nov) in the developing year**, with drier "
@@ -508,11 +618,11 @@ if page == "ENSO Events":
         st.markdown("#### Eastern- vs Central-Pacific")
         fl = D["flavour"].dropna(subset=["mean_pct"])
         figf = px.bar(fl, x="flavour", y="mean_pct", color="flavour", height=300,
-                      color_discrete_map={"Eastern-Pacific": "#ef4444",
+                      color_discrete_map={"Eastern-Pacific": "#f43f5e",
                                           "Central-Pacific": "#8b5cf6"},
                       labels=dict(mean_pct="Oct–Nov rainfall anomaly (%)", flavour=""))
         figf.update_layout(showlegend=False)
-        st.plotly_chart(figf, use_container_width=True)
+        st.plotly_chart(figf, use_container_width=True, config={"displayModeBar": False})
         st.caption("Oct–Nov response by event type (Niño-3 vs Niño-4 at the peak). "
                    "Both flavours wet Sri Lanka similarly in this record.")
     st.info("**Why this differs from the district map.** Compositing by *event* "
@@ -573,7 +683,7 @@ if page == "Ocean Drivers":
                        annotation_text="negative IOD −0.4 °C")
         figm.update_layout(height=300, yaxis_title="Dipole Mode Index (°C)",
                            margin=dict(t=10))
-        st.plotly_chart(figm, use_container_width=True)
+        st.plotly_chart(figm, use_container_width=True, config={"displayModeBar": False})
 
     cL, cR = st.columns(2)
     enso_c = A["enso_comp"].copy()
@@ -636,7 +746,7 @@ if page == "Ocean Drivers":
     j = j.rename(columns={"enso": "ENSO", "iod": "IOD", "n": "n (seasons)",
                           "mean_pct": "Oct–Nov anomaly %"})
     st.dataframe(j.round(1), use_container_width=True, hide_index=True)
-    st.caption("⚠️ These combined cells have **very small samples** (n shown): "
+    st.caption("Note: These combined cells have **very small samples** (n shown): "
                "the El Niño + positive-IOD 'double whammy' and the La Niña + "
                "negative-IOD dry case are indicative only, not significance-tested. "
                "Data: HadISST DMI (NOAA PSL) + CHIRPS rainfall.")
@@ -653,7 +763,7 @@ if page == "Spatial Impact":
                "but un-validated heuristic**, they weight the significant rainfall "
                "signals by sector relevance, and have **not** been calibrated "
                "against observed droughts, yields, reservoir levels or floods. "
-               "Treat them as indicative, not as measured risk.", icon="⚠️")
+               "Treat them as indicative, not as measured risk.")
     _fim_sig = int(composite[(composite["season"] == "FIM")
                              & (composite["significant"])].shape[0])
     _top = ", ".join(_short(r) for r in summary["top_risk_regions"])
@@ -739,7 +849,7 @@ if page == "Spatial Impact":
                        aspect="auto", labels=dict(color="% vs normal"))
     fig_hm.update_traces(text=text.values, texttemplate="%{text}")
     fig_hm.update_layout(height=max(440, 24 * len(pct_lbl) + 90), margin=dict(t=10))
-    st.plotly_chart(fig_hm, use_container_width=True)
+    st.plotly_chart(fig_hm, use_container_width=True, config={"displayModeBar": False})
     st.caption("Blue = wetter than normal during El Niño, red = drier. "
                "**  = significant,  *  = suggestive, after **Benjamini–Hochberg "
                "FDR correction** across all 100 district × season tests, using "
@@ -874,9 +984,9 @@ if page == "Districts":
             csv_bytes, pdf_bytes = _report_bytes(
                 d_table, status.headline, impacts.national_summary(d_imp))
             dl = cc[0].columns(2)
-            dl[0].download_button("⬇️ CSV", csv_bytes, "srilanka_elnino_districts.csv",
+            dl[0].download_button("CSV", csv_bytes, "srilanka_elnino_districts.csv",
                                   "text/csv", use_container_width=True)
-            dl[1].download_button("⬇️ PDF report", pdf_bytes,
+            dl[1].download_button("PDF report", pdf_bytes,
                                   "srilanka_elnino_report.pdf", "application/pdf",
                                   use_container_width=True)
 
@@ -906,13 +1016,13 @@ if page == "Districts":
 
             # --- MODIS vegetation explorer (on demand, per district) ----------
             st.divider()
-            st.markdown("#### 🛰️ MODIS satellite vegetation health (NDVI → VCI)")
+            st.markdown("#### MODIS satellite vegetation health (NDVI → VCI)")
             st.caption("NASA MODIS MOD13Q1 250 m NDVI (2000–present) for one district. "
                        "First load fetches ~60 chunked tiles (~1–2 min, cached after).")
             shorts = sorted(d_imp["region"].str.replace(" District", "", regex=False))
             vc = st.columns([2, 1])
             pick = vc[0].selectbox("District", shorts)
-            if vc[1].button(f"🛰️ Load MODIS NDVI for {pick}", use_container_width=True):
+            if vc[1].button(f"Load MODIS NDVI for {pick}", use_container_width=True):
                 st.session_state["veg_district"] = pick + " District"
                 st.rerun()
 
@@ -951,7 +1061,7 @@ if page == "Districts":
                     figv.add_scatter(x=vv["date"], y=vv["ndvi"].rolling(6).mean(),
                                      mode="lines", line=dict(color="#333", width=1),
                                      name="6-mo mean", showlegend=False)
-                    st.plotly_chart(figv, use_container_width=True)
+                    st.plotly_chart(figv, use_container_width=True, config={"displayModeBar": False})
                     diff = vcomp["El Nino"]["vci"] - vcomp["Neutral"]["vci"]
                     st.caption(
                         f"During El Niño, {short}'s vegetation condition runs "
@@ -994,41 +1104,45 @@ if page == "Region Details":
             + (f"Its drought state right now is **SPI-6 {_spi6:+.2f}** ({_spist})."
                if not pd.isna(_spi6) else ""))
 
-    st.markdown("#### Monthly rainfall by ENSO phase")
-    pc = analysis.phase_composite_by_month(panel, region)
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    figp = go.Figure()
-    for phase in ["El Nino", "Neutral", "La Nina"]:
-        if phase in pc.columns:
-            figp.add_trace(go.Bar(x=months, y=pc[phase], name=PRETTY[phase],
-                                  marker_color=PHASE_COLORS[phase]))
-    figp.update_layout(barmode="group", height=380,
-                       yaxis_title="mean rainfall (mm/month)", margin=dict(t=10))
-    st.plotly_chart(figp, use_container_width=True)
-    st.caption("Compare the red (El Niño) bars against the grey (neutral) bars to "
-               "read the month-by-month El Niño rainfall signal for this district. "
-               "Data: CHIRPS satellite, 1981–present.")
+    c1, c2 = st.columns([1.5, 1])
+    
+    with c1:
+        st.markdown("#### Monthly rainfall by ENSO phase")
+        pc = analysis.phase_composite_by_month(panel, region)
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        figp = go.Figure()
+        for phase in ["El Nino", "Neutral", "La Nina"]:
+            if phase in pc.columns:
+                figp.add_trace(go.Bar(x=months, y=pc[phase], name=PRETTY[phase],
+                                      marker_color=PHASE_COLORS[phase]))
+        figp.update_layout(barmode="group", height=380,
+                           yaxis_title="mean rainfall (mm/month)", margin=dict(t=10, b=0))
+        st.plotly_chart(figp, use_container_width=True, config={"displayModeBar": False})
+        st.caption("Compare the red (El Niño) bars against the grey (neutral) bars to "
+                   "read the month-by-month El Niño rainfall signal for this district. "
+                   "Data: CHIRPS satellite, 1981–present.")
 
-    st.markdown("#### Seasonal El Niño signal & statistical test")
-    cs = composite[composite["region"] == region].copy()
-    cs["season"] = cs["season"].map(SEASON_LABELS)
-    cs["95% CI (%)"] = cs.apply(
-        lambda r: "n/a" if pd.isna(r["ci_low"]) else f"[{r['ci_low']:+.0f}, {r['ci_high']:+.0f}]",
-        axis=1)
-    cs["verdict"] = cs["q_value"].apply(
-        lambda q: "significant" if q < 0.05 else "suggestive" if q < 0.10 else "not sig.")
-    table = cs[["season", "n_elnino", "n_neutral", "precip_pct", "cohens_d",
-                "q_value", "95% CI (%)", "verdict"]].rename(
-        columns={"season": "Season", "n_elnino": "n El Niño yrs",
-                 "n_neutral": "n neutral yrs", "precip_pct": "rain anom %",
-                 "cohens_d": "Cohen's d", "q_value": "q (FDR)"})
-    st.dataframe(table.round(3), use_container_width=True, hide_index=True)
-    st.caption("Samples are **El Niño vs neutral *years*** (detrended seasonal "
-               "totals), not months, so they are statistically independent. "
-               "**q** is the Benjamini–Hochberg FDR-adjusted p-value across all "
-               "district × season tests; Cohen's _d_ ≈ 0.2 small / 0.5 medium / "
-               "0.8 large; the CI is a 2,000-sample bootstrap on the anomaly.")
+    with c2:
+        st.markdown("#### Seasonal El Niño signal")
+        cs = composite[composite["region"] == region].copy()
+        cs["season"] = cs["season"].map(SEASON_LABELS)
+        cs["95% CI (%)"] = cs.apply(
+            lambda r: "n/a" if pd.isna(r["ci_low"]) else f"[{r['ci_low']:+.0f}, {r['ci_high']:+.0f}]",
+            axis=1)
+        cs["verdict"] = cs["q_value"].apply(
+            lambda q: "significant" if q < 0.05 else "suggestive" if q < 0.10 else "not sig.")
+        table = cs[["season", "n_elnino", "n_neutral", "precip_pct", "cohens_d",
+                    "q_value", "95% CI (%)", "verdict"]].rename(
+            columns={"season": "Season", "n_elnino": "n El Niño yrs",
+                     "n_neutral": "n neutral yrs", "precip_pct": "rain anom %",
+                     "cohens_d": "Cohen's d", "q_value": "q (FDR)"})
+        st.dataframe(table.round(3), use_container_width=True, hide_index=True)
+        st.caption("Samples are **El Niño vs neutral *years*** (detrended seasonal "
+                   "totals), not months, so they are statistically independent. "
+                   "**q** is the Benjamini–Hochberg FDR-adjusted p-value across all "
+                   "district × season tests; Cohen's _d_ ≈ 0.2 small / 0.5 medium / "
+                   "0.8 large; the CI is a 2,000-sample bootstrap on the anomaly.")
 
 
 # --------------------------------------------------------------------------- #
@@ -1040,7 +1154,7 @@ if page == "Sector Impacts":
                "the significance-tested rainfall signals by each zone's "
                "sector relevance. They are **not** calibrated against observed "
                "drought, crop-yield, reservoir or flood records, use them to "
-               "compare districts, not as absolute risk.", icon="⚠️")
+               "compare districts, not as absolute risk.")
 
     s = summary
     st.success(
@@ -1078,7 +1192,7 @@ if page == "Sector Impacts":
                      var_name="sector", value_name="score").dropna()
     figb = px.bar(long.sort_values("name"), x="name", y="score", color="sector",
                   barmode="group", height=460, labels=dict(score="risk (0-100)", name=""))
-    st.plotly_chart(figb, use_container_width=True)
+    st.plotly_chart(figb, use_container_width=True, config={"displayModeBar": False})
 
 
 # --------------------------------------------------------------------------- #
@@ -1198,7 +1312,7 @@ st.markdown(f"""
 <div class="enso-footer">
   <span>Developed by
      <a href="https://dineshmadhushanka.vercel.app/" target="_blank">Dinesh Madhushanka ↗</a>
-     <span class="hide-sm muted">&nbsp;·&nbsp; 🌊 El Niño × Sri Lanka · analytical aid,
+     <span class="hide-sm muted">&nbsp;·&nbsp; El Niño × Sri Lanka · analytical aid,
      not a forecast · CHIRPS {panel['date'].min():%Y}–{panel['date'].max():%Y}</span></span>
 </div>
 """, unsafe_allow_html=True)
