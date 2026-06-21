@@ -55,6 +55,7 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color:
 h1, h2, h3 { font-family: 'Outfit', sans-serif; letter-spacing: -0.02em; }
 .block-container { padding-top: 1.4rem; padding-bottom: 4.5rem; max-width: 1400px; }
 #MainMenu, [data-testid="stDecoration"], footer { visibility: hidden; }
+[data-testid="stHeader"] { background: transparent !important; }
 [data-testid="stAppDeployButton"], [data-testid="stDeployButton"], [data-testid="stToolbarActions"] { display: none !important; }
 
 /* Premium Glassmorphic Metric Cards */
